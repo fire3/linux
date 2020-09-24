@@ -950,6 +950,10 @@ void __init zone_sizes_init(void)
 #endif
 
 	free_area_init_nodes(max_zone_pfns);
+
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+
+#endif
 }
 
 __visible DEFINE_PER_CPU_SHARED_ALIGNED(struct tlb_state, cpu_tlbstate) = {

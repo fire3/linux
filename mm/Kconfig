@@ -384,6 +384,17 @@ config NOMMU_INITIAL_TRIM_EXCESS
 
 	  See Documentation/nommu-mmap.txt for more information.
 
+config TRANSPARENT_SEGMENTPAGE
+        bool "Transparent Segmentpage Support"
+        depends on HAVE_ARCH_TRANSPARENT_SEGMENTPAGE
+        help
+          Transparent Segmentpages allows the kernel to use segment pages and 
+          transparently to the segmented applications. This feature helps 
+          applications to use segmentation-based co-processors within  
+          paging-based main-processors.
+
+	  If unsure, say "n".
+
 config TRANSPARENT_HUGEPAGE
 	bool "Transparent Hugepage Support"
 	depends on HAVE_ARCH_TRANSPARENT_HUGEPAGE

@@ -44,7 +44,9 @@
 #include <asm/unwind.h>
 #include <asm/vsyscall.h>
 #include <linux/vmalloc.h>
-
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#include <linux/tsp.h>
+#endif
 /*
  * max_low_pfn_mapped: highest directly mapped pfn < 4 GB
  * max_pfn_mapped:     highest directly mapped pfn > 4 GB
@@ -1160,6 +1162,9 @@ void __init setup_arch(char **cmdline_p)
 
 	if (boot_cpu_has(X86_FEATURE_GBPAGES))
 		hugetlb_cma_reserve(PUD_SHIFT - PAGE_SHIFT);
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+                tsp_reserve(PUD_SHIFT - PAGE_SHIFT);
+#endif
 
 	/*
 	 * Reserve memory for crash kernel after SRAT is parsed so that it
