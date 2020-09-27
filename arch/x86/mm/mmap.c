@@ -146,6 +146,11 @@ void arch_pick_mmap_layout(struct mm_struct *mm, struct rlimit *rlim_stack)
 			arch_rnd(mmap32_rnd_bits), task_size_32bit(),
 			rlim_stack);
 #endif
+
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+        mm->get_unmapped_area = arch_get_unmapped_area;
+        mm->mmap_base =  __TASK_UNMAPPED_BASE(task_size_64bit(0));
+#endif
 }
 
 unsigned long get_mmap_base(int is_legacy)
