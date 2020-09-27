@@ -35,6 +35,7 @@
 #include <asm/tlb.h>
 
 #include <linux/proc_fs.h>
+#include <linux/miscdevice.h>
 #include <linux/tsp.h>
 
 static unsigned long tsp_reserve_size __initdata;
@@ -1269,5 +1270,103 @@ static int __init proc_tspblock_init(void)
 }
 fs_initcall(proc_tspblock_init);
 
+void tsp_destroy(struct tsp *tsp)
+{
+        if (!tsp)
+                return 0;
 
+        if (tsp->code_segment_paddr && tsp->code_segment_size)
+                tspblock_free(tsp->code_segment_paddr, tsp->code_segment_size);
 
+        if (tsp->heap_segment_paddr && tsp->heap_segment_size)
+                tspblock_free(tsp->heap_segment_paddr, tsp->heap_segment_size);
+
+        if (tsp->mmap_segment_paddr && tsp->mmap_segment_size)
+                tspblock_free(tsp->mmap_segment_paddr, tsp->mmap_segment_size);
+
+        if (tsp->stack_segment_paddr && tsp->stack_segment_size)
+                tspblock_free(tsp->stack_segment_paddr, tsp->stack_segment_size);
+
+        kfree(tsp);
+}
+
+struct tsp * tsp_alloc(unsigned long code_size, unsigned long heap_size,
+                unsigned long mmap_size, unsigned long stack_size)
+{
+        struct tsp *tsp = NULL;
+
+	tsp = kzalloc(sizeof(struct tsp), GFP_KERNEL);
+	if (!tsp)
+		return ERR_PTR(-ENOMEM);
+
+        tsp->code_segment_paddr = tspblock_alloc(code_size, PAGE_SIZE);
+        if (!tsp->code_segment_paddr)  {
+                tsp_destroy(tsp);
+		return ERR_PTR(-ENOMEM);
+        }
+        tsp->code_segment_size = code_size;
+
+        tsp->heap_segment_paddr = tspblock_alloc(heap_size, PAGE_SIZE);
+        if (!tsp->heap_segment_paddr)  {
+                tsp_destroy(tsp);
+		return ERR_PTR(-ENOMEM);
+        }
+        tsp->heap_segment_size = heap_size;
+
+        tsp->mmap_segment_paddr = tspblock_alloc(mmap_size, PAGE_SIZE);
+        if (!tsp->mmap_segment_paddr)  {
+                tsp_destroy(tsp);
+		return ERR_PTR(-ENOMEM);
+        }
+        tsp->mmap_segment_size = mmap_size;
+
+        tsp->stack_segment_paddr = tspblock_alloc(stack_size, PAGE_SIZE);
+        if (!tsp->stack_segment_paddr)  {
+                tsp_destroy(tsp);
+		return ERR_PTR(-ENOMEM);
+        }
+        tsp->stack_segment_size = stack_size;
+
+        tsp->mm = current->mm;
+        tsp->task = current;
+	atomic_set(&tsp->users_count, 0);
+
+        return tsp;
+}
+
+void get_tsp(struct tsp *tsp)
+{
+	atomic_inc(&tsp->users_count);
+}
+
+void put_tsp(struct tsp *tsp)
+{
+	if (atomic_dec_and_test(&tsp->users_count)) {
+		tsp_destroy(tsp);
+	}
+}
+
+static int tsp_release(struct inode *inode, struct file *filp)
+{
+	struct tsp *tsp = filp->private_data;
+
+	put_tsp(tsp);
+
+	return 0;
+}
+
+static long tsp_ioctl(struct file *filp, unsigned int ioctl,
+			     unsigned long arg)
+{
+
+	struct tsp *tsp = filp->private_data;
+	void __user *argp = (void __user *)arg;
+	int r;
+}
+
+struct file_operations tsp_fops = {
+	.release = tsp_release,
+	.unlocked_ioctl = tsp_ioctl,
+	.compat_ioctl = tsp_ioctl,
+	.llseek = noop_llseek,
+};

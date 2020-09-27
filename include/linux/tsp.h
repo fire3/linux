@@ -2,6 +2,8 @@
 #ifndef __TSP_H__
 #define __TSP_H__
 
+#ifdef __KERNEL__
+
 #include <linux/init.h>
 #include <linux/types.h>
 #include <linux/numa.h>
@@ -215,5 +217,30 @@ int tspblock_internal_test(void);
 #define TSPBLOCK_FREE                  _IOWR(TSPBLOCKIO, 0x03, unsigned long)
 
 
+struct tsp {
+        atomic_t users_count;
+        struct mm_struct        *mm;
+        struct task_struct      *task;
+        unsigned long code_segment_paddr;
+        unsigned long code_segment_vaddr;
+        unsigned long code_segment_size;
+        unsigned long heap_segment_paddr;
+        unsigned long heap_segment_vaddr;
+        unsigned long heap_segment_size;
+        unsigned long mmap_segment_paddr;
+        unsigned long mmap_segment_vaddr;
+        unsigned long mmap_segment_size;
+        unsigned long stack_segment_paddr;
+        unsigned long stack_segment_vaddr;
+        unsigned long stack_segment_size;
+};
+
+struct tsp * tsp_alloc(unsigned long code_size, unsigned long heap_size,
+                unsigned long mmap_size, unsigned long stack_size);
+void get_tsp(struct tsp *tsp);
+void put_tsp(struct tsp *tsp);
+extern struct file_operations tsp_fops;
 #endif
 
+
+#endif

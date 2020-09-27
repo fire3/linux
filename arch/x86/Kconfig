@@ -548,6 +548,14 @@ config X86_VSMP
 	  supposed to run on these EM64T-based machines.  Only choose this option
 	  if you have one of these machines.
 
+config X86_APC
+        bool "X86 Accelerated Processing Core"
+        select TRANSPARENT_SEGMENTPAGE
+        depends on X86_64 && SMP
+	---help---
+          Support for X86 emulated manycore accelerated processor with TSP support.
+	  If you don't have one of these, you should say N here.
+
 config X86_UV
 	bool "SGI Ultraviolet"
 	depends on X86_64
