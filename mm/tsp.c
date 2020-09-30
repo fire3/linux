@@ -76,63 +76,63 @@ void __init tsp_reserve(int order)
 		tsp_reserve_size / SZ_1M, per_node / SZ_1M);
 
 	reserved = 0;
-	for_each_node_state(nid, N_ONLINE) {
+	for_each_node_state (nid, N_ONLINE) {
 		phys_addr_t addr = 0;
 
 		size = min(per_node, tsp_reserve_size - reserved);
 		size = round_up(size, PAGE_SIZE << order);
 
-                pr_info("memblock_start: %llu memblock_end: %llu\n",
-                                memblock_start, memblock_end);
-                addr = memblock_alloc_range_nid(size, PAGE_SIZE << order,
-                                memblock_start, memblock_end, nid, false);
+		pr_info("memblock_start: %llu memblock_end: %llu\n",
+			memblock_start, memblock_end);
+		addr = memblock_alloc_range_nid(size, PAGE_SIZE << order,
+						memblock_start, memblock_end,
+						nid, false);
 
 		if (!addr) {
-			pr_warn("tsp: reservation failed: node %d",
-				nid);
+			pr_warn("tsp: reservation failed: node %d", nid);
 			continue;
 		}
 
-                tspblock_add_node(addr, size, nid);
+		tspblock_add_node(addr, size, nid);
 
 		reserved += size;
-		pr_info("tsp: reserved %lu MiB on node %d\n",
-			size / SZ_1M, nid);
+		pr_info("tsp: reserved %lu MiB on node %d\n", size / SZ_1M,
+			nid);
 
 		if (reserved >= tsp_reserve_size)
-                        break;
-        }
-        __tspblock_dump_all();
+			break;
+	}
+	__tspblock_dump_all();
 }
-
 
 /*
  * tspblock_lock protects all slob allocator structures.
  */
 static DEFINE_SPINLOCK(tspblock_lock);
 
-static struct tspblock_region tspblock_memory_init_regions[INIT_TSPBLOCK_REGIONS] ;
-static struct tspblock_region tspblock_reserved_init_regions[INIT_TSPBLOCK_REGIONS] ;
+static struct tspblock_region
+	tspblock_memory_init_regions[INIT_TSPBLOCK_REGIONS];
+static struct tspblock_region
+	tspblock_reserved_init_regions[INIT_TSPBLOCK_REGIONS];
 
-struct tspblock tspblock  = {
-	.memory.regions		= tspblock_memory_init_regions,
-	.memory.cnt		= 1,	/* empty dummy entry */
-	.memory.max		= INIT_TSPBLOCK_REGIONS,
+struct tspblock tspblock = {
+	.memory.regions = tspblock_memory_init_regions,
+	.memory.cnt = 1, /* empty dummy entry */
+	.memory.max = INIT_TSPBLOCK_REGIONS,
 
-	.reserved.regions	= tspblock_reserved_init_regions,
-	.reserved.cnt		= 1,	/* empty dummy entry */
-	.reserved.max		= INIT_TSPBLOCK_REGIONS,
+	.reserved.regions = tspblock_reserved_init_regions,
+	.reserved.cnt = 1, /* empty dummy entry */
+	.reserved.max = INIT_TSPBLOCK_REGIONS,
 
-	.current_limit		= TSPBLOCK_ALLOC_ANYWHERE,
+	.current_limit = TSPBLOCK_ALLOC_ANYWHERE,
 };
 
 int tspblock_debug = 0;
 static int tspblock_can_resize = 1;
 static int tspblock_memory_in_slab = 0;
-static int tspblock_reserved_in_slab  = 0;
+static int tspblock_reserved_in_slab = 0;
 /* inline so we don't get a warning when pr_debug is compiled out */
-static const char *
-tspblock_type_name(struct tspblock_type *type)
+static const char *tspblock_type_name(struct tspblock_type *type)
 {
 	if (type == &tspblock.memory)
 		return "memory";
@@ -151,14 +151,16 @@ static inline phys_addr_t tspblock_cap_size(phys_addr_t base, phys_addr_t *size)
 /*
  * Address comparison utilities
  */
-static unsigned long  tspblock_addrs_overlap(phys_addr_t base1, phys_addr_t size1,
-				       phys_addr_t base2, phys_addr_t size2)
+static unsigned long tspblock_addrs_overlap(phys_addr_t base1,
+					    phys_addr_t size1,
+					    phys_addr_t base2,
+					    phys_addr_t size2)
 {
 	return ((base1 < (base2 + size2)) && (base2 < (base1 + size1)));
 }
 
-static long  tspblock_overlaps_region(struct tspblock_type *type,
-					phys_addr_t base, phys_addr_t size)
+static long tspblock_overlaps_region(struct tspblock_type *type,
+				     phys_addr_t base, phys_addr_t size)
 {
 	unsigned long i;
 
@@ -171,7 +173,6 @@ static long  tspblock_overlaps_region(struct tspblock_type *type,
 
 	return (i < type->cnt) ? i : -1;
 }
-
 
 /**
  * tspblock_find_in_range_node_reverse - find free area in given range and node reverse
@@ -186,9 +187,10 @@ static long  tspblock_overlaps_region(struct tspblock_type *type,
  * RETURNS:
  * Found address on success, %0 on failure.
  */
-phys_addr_t  tspblock_find_in_range_node_reverse(phys_addr_t start,
-					phys_addr_t end, phys_addr_t size,
-					phys_addr_t align, int nid)
+phys_addr_t tspblock_find_in_range_node_reverse(phys_addr_t start,
+						phys_addr_t end,
+						phys_addr_t size,
+						phys_addr_t align, int nid)
 {
 	phys_addr_t this_start, this_end, cand;
 	u64 i;
@@ -201,7 +203,8 @@ phys_addr_t  tspblock_find_in_range_node_reverse(phys_addr_t start,
 	start = max_t(phys_addr_t, start, PAGE_SIZE);
 	end = max(start, end);
 
-	for_each_freemem_range_reverse(i, nid, &this_start, &this_end, NULL) {
+	for_each_freemem_range_reverse(i, nid, &this_start, &this_end, NULL)
+	{
 		this_start = clamp(this_start, start, end);
 		this_end = clamp(this_end, start, end);
 
@@ -214,8 +217,6 @@ phys_addr_t  tspblock_find_in_range_node_reverse(phys_addr_t start,
 	}
 	return 0;
 }
-
-
 
 /**
  * tspblock_find_in_range_node - find free area in given range and node
@@ -230,9 +231,9 @@ phys_addr_t  tspblock_find_in_range_node_reverse(phys_addr_t start,
  * RETURNS:
  * Found address on success, %0 on failure.
  */
-phys_addr_t  tspblock_find_in_range_node(phys_addr_t start,
-					phys_addr_t end, phys_addr_t size,
-					phys_addr_t align, int nid)
+phys_addr_t tspblock_find_in_range_node(phys_addr_t start, phys_addr_t end,
+					phys_addr_t size, phys_addr_t align,
+					int nid)
 {
 	phys_addr_t this_start, this_end, cand;
 	u64 i;
@@ -245,7 +246,8 @@ phys_addr_t  tspblock_find_in_range_node(phys_addr_t start,
 	start = max_t(phys_addr_t, start, PAGE_SIZE);
 	end = max(start, end);
 
-	for_each_freemem_range(i, nid, &this_start, &this_end, NULL) {
+	for_each_freemem_range(i, nid, &this_start, &this_end, NULL)
+	{
 		this_start = clamp(this_start, start, end);
 		this_end = clamp(this_end, start, end);
 
@@ -260,7 +262,6 @@ phys_addr_t  tspblock_find_in_range_node(phys_addr_t start,
 	return 0;
 }
 
-
 /**
  * tspblock_find_in_range_reverse - find free area in given range reverse
  * @start: start of candidate range
@@ -273,16 +274,12 @@ phys_addr_t  tspblock_find_in_range_node(phys_addr_t start,
  * RETURNS:
  * Found address on success, %0 on failure.
  */
-phys_addr_t  tspblock_find_in_range_reverse(phys_addr_t start,
-					phys_addr_t end, phys_addr_t size,
-					phys_addr_t align)
+phys_addr_t tspblock_find_in_range_reverse(phys_addr_t start, phys_addr_t end,
+					   phys_addr_t size, phys_addr_t align)
 {
 	return tspblock_find_in_range_node_reverse(start, end, size, align,
-					   MCK_MAX_NUMNODES);
+						   MCK_MAX_NUMNODES);
 }
-
-
-
 
 /**
  * tspblock_find_in_range - find free area in given range
@@ -296,15 +293,14 @@ phys_addr_t  tspblock_find_in_range_reverse(phys_addr_t start,
  * RETURNS:
  * Found address on success, %0 on failure.
  */
-phys_addr_t  tspblock_find_in_range(phys_addr_t start,
-					phys_addr_t end, phys_addr_t size,
-					phys_addr_t align)
+phys_addr_t tspblock_find_in_range(phys_addr_t start, phys_addr_t end,
+				   phys_addr_t size, phys_addr_t align)
 {
 	return tspblock_find_in_range_node(start, end, size, align,
 					   MCK_MAX_NUMNODES);
 }
 
-static void  tspblock_remove_region(struct tspblock_type *type, unsigned long r)
+static void tspblock_remove_region(struct tspblock_type *type, unsigned long r)
 {
 	type->total_size -= type->regions[r].size;
 	memmove(&type->regions[r], &type->regions[r + 1],
@@ -321,8 +317,7 @@ static void  tspblock_remove_region(struct tspblock_type *type, unsigned long r)
 	}
 }
 
-phys_addr_t  get_allocated_tspblock_reserved_regions_info(
-					phys_addr_t *addr)
+phys_addr_t get_allocated_tspblock_reserved_regions_info(phys_addr_t *addr)
 {
 	if (tspblock.reserved.regions == tspblock_reserved_init_regions)
 		return 0;
@@ -348,9 +343,9 @@ phys_addr_t  get_allocated_tspblock_reserved_regions_info(
  * RETURNS:
  * 0 on success, -1 on failure.
  */
-static int  tspblock_double_array(struct tspblock_type *type,
-						phys_addr_t new_area_start,
-						phys_addr_t new_area_size)
+static int tspblock_double_array(struct tspblock_type *type,
+				 phys_addr_t new_area_start,
+				 phys_addr_t new_area_size)
 {
 	struct tspblock_region *new_array, *old_array;
 	phys_addr_t old_alloc_size, new_alloc_size;
@@ -390,17 +385,18 @@ static int  tspblock_double_array(struct tspblock_type *type,
 	 * call into tspblock while it's still active, or much later when slab
 	 * is active for memory hotplug operations
 	 */
-        new_array = kmalloc(new_size, GFP_KERNEL);
-        addr = new_array ? __pa(new_array) : 0;
+	new_array = kmalloc(new_size, GFP_KERNEL);
+	addr = new_array ? __pa(new_array) : 0;
 	if (!addr) {
-		pr_err("tspblock: Failed to double %s array from %ld to %ld entries !\n",
+		pr_err("tspblock: Failed to double %s array from %ld to %ld "
+		       "entries !\n",
 		       tspblock_type_name(type), type->max, type->max * 2);
 		return -1;
 	}
 
 	tspblock_dbg("tspblock: %s is doubled to %ld at [%#010llx-%#010llx]",
-			tspblock_type_name(type), type->max * 2, (u64)addr,
-			(u64)addr + new_size - 1);
+		     tspblock_type_name(type), type->max * 2, (u64)addr,
+		     (u64)addr + new_size - 1);
 
 	/*
 	 * Found space, we now need to move the array over before we add the
@@ -415,7 +411,7 @@ static int  tspblock_double_array(struct tspblock_type *type,
 
 	/* Free old array. We needn't free it if the array is the static one */
 	if (*in_slab)
-                kfree(old_array);
+		kfree(old_array);
 
 	/* Update slab flag */
 	*in_slab = use_slab;
@@ -428,7 +424,7 @@ static int  tspblock_double_array(struct tspblock_type *type,
  *
  * Scan @type and merge neighboring compatible regions.
  */
-static void  tspblock_merge_regions(struct tspblock_type *type)
+static void tspblock_merge_regions(struct tspblock_type *type)
 {
 	int i = 0;
 
@@ -439,7 +435,7 @@ static void  tspblock_merge_regions(struct tspblock_type *type)
 
 		if (this->base + this->size != next->base ||
 		    tspblock_get_region_node(this) !=
-		    tspblock_get_region_node(next)) {
+			    tspblock_get_region_node(next)) {
 			BUG_ON(this->base + this->size > next->base);
 			i++;
 			continue;
@@ -462,9 +458,8 @@ static void  tspblock_merge_regions(struct tspblock_type *type)
  * Insert new tspblock region [@base,@base+@size) into @type at @idx.
  * @type must already have extra room to accomodate the new region.
  */
-static void  tspblock_insert_region(struct tspblock_type *type,
-						   int idx, phys_addr_t base,
-						   phys_addr_t size, int nid)
+static void tspblock_insert_region(struct tspblock_type *type, int idx,
+				   phys_addr_t base, phys_addr_t size, int nid)
 {
 	struct tspblock_region *rgn = &type->regions[idx];
 
@@ -492,8 +487,8 @@ static void  tspblock_insert_region(struct tspblock_type *type,
  * RETURNS:
  * 0 on success, -errno on failure.
  */
-static int  tspblock_add_region(struct tspblock_type *type,
-				phys_addr_t base, phys_addr_t size, int nid)
+static int tspblock_add_region(struct tspblock_type *type, phys_addr_t base,
+			       phys_addr_t size, int nid)
 {
 	bool insert = false;
 	phys_addr_t obase = base;
@@ -567,15 +562,15 @@ repeat:
 	}
 }
 
-int  tspblock_add_node(phys_addr_t base, phys_addr_t size,
-				       int nid)
+int tspblock_add_node(phys_addr_t base, phys_addr_t size, int nid)
 {
 	return tspblock_add_region(&tspblock.memory, base, size, nid);
 }
 
-int  tspblock_add(phys_addr_t base, phys_addr_t size)
+int tspblock_add(phys_addr_t base, phys_addr_t size)
 {
-	return tspblock_add_region(&tspblock.memory, base, size, MCK_MAX_NUMNODES);
+	return tspblock_add_region(&tspblock.memory, base, size,
+				   MCK_MAX_NUMNODES);
 }
 
 /**
@@ -594,9 +589,9 @@ int  tspblock_add(phys_addr_t base, phys_addr_t size)
  * RETURNS:
  * 0 on success, -errno on failure.
  */
-static int  tspblock_isolate_range(struct tspblock_type *type,
-					phys_addr_t base, phys_addr_t size,
-					int *start_rgn, int *end_rgn)
+static int tspblock_isolate_range(struct tspblock_type *type, phys_addr_t base,
+				  phys_addr_t size, int *start_rgn,
+				  int *end_rgn)
 {
 	phys_addr_t end = base + tspblock_cap_size(base, &size);
 	int i;
@@ -652,48 +647,46 @@ static int  tspblock_isolate_range(struct tspblock_type *type,
 	return 0;
 }
 
-static int  __tspblock_remove(struct tspblock_type *type,
-					     phys_addr_t base, phys_addr_t size)
+static int __tspblock_remove(struct tspblock_type *type, phys_addr_t base,
+			     phys_addr_t size)
 {
 	int start_rgn, end_rgn;
 	int i, ret;
-        unsigned long flags;
+	unsigned long flags;
 
 	spin_lock_irqsave(&tspblock_lock, flags);
 	ret = tspblock_isolate_range(type, base, size, &start_rgn, &end_rgn);
 	if (ret) {
-                spin_unlock_irqrestore(&tspblock_lock, flags);
+		spin_unlock_irqrestore(&tspblock_lock, flags);
 		return ret;
-        }
+	}
 
 	for (i = end_rgn - 1; i >= start_rgn; i--)
 		tspblock_remove_region(type, i);
-        spin_unlock_irqrestore(&tspblock_lock, flags);
+	spin_unlock_irqrestore(&tspblock_lock, flags);
 	return 0;
 }
 
-int  tspblock_remove(phys_addr_t base, phys_addr_t size)
+int tspblock_remove(phys_addr_t base, phys_addr_t size)
 {
 	return __tspblock_remove(&tspblock.memory, base, size);
 }
 
-int  tspblock_free(phys_addr_t base, phys_addr_t size)
+int tspblock_free(phys_addr_t base, phys_addr_t size)
 {
 	tspblock_dbg("   tspblock_free: [%#016llx-%#016llx] %pF\n",
-		     (unsigned long long)base,
-		     (unsigned long long)base + size,
+		     (unsigned long long)base, (unsigned long long)base + size,
 		     (void *)_RET_IP_);
 
 	return __tspblock_remove(&tspblock.reserved, base, size);
 }
 
-int  tspblock_reserve(phys_addr_t base, phys_addr_t size)
+int tspblock_reserve(phys_addr_t base, phys_addr_t size)
 {
 	struct tspblock_type *_rgn = &tspblock.reserved;
 
 	tspblock_dbg("tspblock_reserve: [%#016llx-%#016llx] %pF\n",
-		     (unsigned long long)base,
-		     (unsigned long long)base + size,
+		     (unsigned long long)base, (unsigned long long)base + size,
 		     (void *)_RET_IP_);
 
 	return tspblock_add_region(_rgn, base, size, MCK_MAX_NUMNODES);
@@ -722,29 +715,30 @@ int  tspblock_reserve(phys_addr_t base, phys_addr_t size)
  * As both region arrays are sorted, the function advances the two indices
  * in lockstep and returns each intersection.
  */
-void  __next_free_mckmem_range(u64 *idx, int nid,
-					   phys_addr_t *out_start,
-					   phys_addr_t *out_end, int *out_nid)
+void __next_free_mckmem_range(u64 *idx, int nid, phys_addr_t *out_start,
+			      phys_addr_t *out_end, int *out_nid)
 {
 	struct tspblock_type *mem = &tspblock.memory;
 	struct tspblock_type *rsv = &tspblock.reserved;
 	int mi = *idx & 0xffffffff;
 	int ri = *idx >> 32;
 
-	for ( ; mi < mem->cnt; mi++) {
+	for (; mi < mem->cnt; mi++) {
 		struct tspblock_region *m = &mem->regions[mi];
 		phys_addr_t m_start = m->base;
 		phys_addr_t m_end = m->base + m->size;
 
 		/* only memory regions are associated with nodes, check it */
-		if (nid != MCK_MAX_NUMNODES && nid != tspblock_get_region_node(m))
+		if (nid != MCK_MAX_NUMNODES &&
+		    nid != tspblock_get_region_node(m))
 			continue;
 
 		/* scan areas before each reservation for intersection */
-		for ( ; ri < rsv->cnt + 1; ri++) {
+		for (; ri < rsv->cnt + 1; ri++) {
 			struct tspblock_region *r = &rsv->regions[ri];
 			phys_addr_t r_start = ri ? r[-1].base + r[-1].size : 0;
-			phys_addr_t r_end = ri < rsv->cnt ? r->base : ULLONG_MAX;
+			phys_addr_t r_end =
+				ri < rsv->cnt ? r->base : ULLONG_MAX;
 
 			/* if ri advanced past mi, break out to advance mi */
 			if (r_start >= m_end)
@@ -785,9 +779,8 @@ void  __next_free_mckmem_range(u64 *idx, int nid,
  *
  * Reverse of __next_free_mckmem_range().
  */
-void  __next_free_mckmem_range_rev(u64 *idx, int nid,
-					   phys_addr_t *out_start,
-					   phys_addr_t *out_end, int *out_nid)
+void __next_free_mckmem_range_rev(u64 *idx, int nid, phys_addr_t *out_start,
+				  phys_addr_t *out_end, int *out_nid)
 {
 	struct tspblock_type *mem = &tspblock.memory;
 	struct tspblock_type *rsv = &tspblock.reserved;
@@ -799,20 +792,22 @@ void  __next_free_mckmem_range_rev(u64 *idx, int nid,
 		ri = rsv->cnt;
 	}
 
-	for ( ; mi >= 0; mi--) {
+	for (; mi >= 0; mi--) {
 		struct tspblock_region *m = &mem->regions[mi];
 		phys_addr_t m_start = m->base;
 		phys_addr_t m_end = m->base + m->size;
 
 		/* only memory regions are associated with nodes, check it */
-		if (nid != MCK_MAX_NUMNODES && nid != tspblock_get_region_node(m))
+		if (nid != MCK_MAX_NUMNODES &&
+		    nid != tspblock_get_region_node(m))
 			continue;
 
 		/* scan areas before each reservation for intersection */
-		for ( ; ri >= 0; ri--) {
+		for (; ri >= 0; ri--) {
 			struct tspblock_region *r = &rsv->regions[ri];
 			phys_addr_t r_start = ri ? r[-1].base + r[-1].size : 0;
-			phys_addr_t r_end = ri < rsv->cnt ? r->base : ULLONG_MAX;
+			phys_addr_t r_end =
+				ri < rsv->cnt ? r->base : ULLONG_MAX;
 
 			/* if ri advanced past mi, break out to advance mi */
 			if (r_end <= m_start)
@@ -842,9 +837,8 @@ void  __next_free_mckmem_range_rev(u64 *idx, int nid,
 /*
  * Common iterator interface used to define for_each_mem_range().
  */
-void  __next_mckmem_pfn_range(int *idx, int nid,
-				unsigned long *out_start_pfn,
-				unsigned long *out_end_pfn, int *out_nid)
+void __next_mckmem_pfn_range(int *idx, int nid, unsigned long *out_start_pfn,
+			     unsigned long *out_end_pfn, int *out_nid)
 {
 	struct tspblock_type *type = &tspblock.memory;
 	struct tspblock_region *r;
@@ -882,8 +876,7 @@ void  __next_mckmem_pfn_range(int *idx, int nid,
  * RETURNS:
  * 0 on success, -errno on failure.
  */
-int  tspblock_set_node(phys_addr_t base, phys_addr_t size,
-				      int nid)
+int tspblock_set_node(phys_addr_t base, phys_addr_t size, int nid)
 {
 	struct tspblock_type *type = &tspblock.memory;
 	int start_rgn, end_rgn;
@@ -900,75 +893,79 @@ int  tspblock_set_node(phys_addr_t base, phys_addr_t size,
 	return 0;
 }
 
-static phys_addr_t  tspblock_alloc_base_nid(phys_addr_t size,
-					phys_addr_t align, phys_addr_t max_addr,
-					int nid)
-{
-    phys_addr_t found;
-    unsigned long flags;
-
-    BUG_ON(align == 0);
-    /* align @size to avoid excessive fragmentation on reserved array */
-    size = round_up(size, align);
-
-    spin_lock_irqsave(&tspblock_lock, flags);
-    found = tspblock_find_in_range_node(0, max_addr, size, align, nid);
-    if (found && !tspblock_reserve(found, size)) {
-        spin_unlock_irqrestore(&tspblock_lock, flags);
-        return found;
-    }
-
-    spin_unlock_irqrestore(&tspblock_lock, flags);
-    return 0;
-}
-
-
-static phys_addr_t  tspblock_alloc_base_nid_bottom_up(phys_addr_t size,
-					phys_addr_t align, phys_addr_t max_addr,
-					int nid)
+static phys_addr_t tspblock_alloc_base_nid(phys_addr_t size, phys_addr_t align,
+					   phys_addr_t max_addr, int nid)
 {
 	phys_addr_t found;
-        unsigned long flags;
+	unsigned long flags;
 
-        BUG_ON(align == 0);
+	BUG_ON(align == 0);
 	/* align @size to avoid excessive fragmentation on reserved array */
 	size = round_up(size, align);
 
 	spin_lock_irqsave(&tspblock_lock, flags);
-	found = tspblock_find_in_range_node_reverse(0, max_addr, size, align, nid);
+	found = tspblock_find_in_range_node(0, max_addr, size, align, nid);
 	if (found && !tspblock_reserve(found, size)) {
-                spin_unlock_irqrestore(&tspblock_lock, flags);
+		spin_unlock_irqrestore(&tspblock_lock, flags);
 		return found;
-        }
+	}
 
-        spin_unlock_irqrestore(&tspblock_lock, flags);
+	spin_unlock_irqrestore(&tspblock_lock, flags);
 	return 0;
 }
 
-
-phys_addr_t  tspblock_alloc_nid_bottom_up(phys_addr_t size, phys_addr_t align, int nid)
+static phys_addr_t tspblock_alloc_base_nid_bottom_up(phys_addr_t size,
+						     phys_addr_t align,
+						     phys_addr_t max_addr,
+						     int nid)
 {
-	return tspblock_alloc_base_nid_bottom_up(size, align, TSPBLOCK_ALLOC_ACCESSIBLE, nid);
+	phys_addr_t found;
+	unsigned long flags;
+
+	BUG_ON(align == 0);
+	/* align @size to avoid excessive fragmentation on reserved array */
+	size = round_up(size, align);
+
+	spin_lock_irqsave(&tspblock_lock, flags);
+	found = tspblock_find_in_range_node_reverse(0, max_addr, size, align,
+						    nid);
+	if (found && !tspblock_reserve(found, size)) {
+		spin_unlock_irqrestore(&tspblock_lock, flags);
+		return found;
+	}
+
+	spin_unlock_irqrestore(&tspblock_lock, flags);
+	return 0;
 }
 
-phys_addr_t  tspblock_alloc_nid(phys_addr_t size, phys_addr_t align, int nid)
+phys_addr_t tspblock_alloc_nid_bottom_up(phys_addr_t size, phys_addr_t align,
+					 int nid)
 {
-	return tspblock_alloc_base_nid(size, align, TSPBLOCK_ALLOC_ACCESSIBLE, nid);
+	return tspblock_alloc_base_nid_bottom_up(
+		size, align, TSPBLOCK_ALLOC_ACCESSIBLE, nid);
 }
 
-phys_addr_t __tspblock_alloc_base(phys_addr_t size, phys_addr_t align, phys_addr_t max_addr)
+phys_addr_t tspblock_alloc_nid(phys_addr_t size, phys_addr_t align, int nid)
+{
+	return tspblock_alloc_base_nid(size, align, TSPBLOCK_ALLOC_ACCESSIBLE,
+				       nid);
+}
+
+phys_addr_t __tspblock_alloc_base(phys_addr_t size, phys_addr_t align,
+				  phys_addr_t max_addr)
 {
 	return tspblock_alloc_base_nid(size, align, max_addr, MCK_MAX_NUMNODES);
 }
 
-
-phys_addr_t __tspblock_alloc_base_bottom_up(phys_addr_t size, phys_addr_t align, phys_addr_t max_addr)
+phys_addr_t __tspblock_alloc_base_bottom_up(phys_addr_t size, phys_addr_t align,
+					    phys_addr_t max_addr)
 {
-	return tspblock_alloc_base_nid_bottom_up(size, align, max_addr, MCK_MAX_NUMNODES);
+	return tspblock_alloc_base_nid_bottom_up(size, align, max_addr,
+						 MCK_MAX_NUMNODES);
 }
 
-
-phys_addr_t tspblock_alloc_base_bottom_up(phys_addr_t size, phys_addr_t align, phys_addr_t max_addr)
+phys_addr_t tspblock_alloc_base_bottom_up(phys_addr_t size, phys_addr_t align,
+					  phys_addr_t max_addr)
 {
 	phys_addr_t alloc;
 
@@ -976,13 +973,13 @@ phys_addr_t tspblock_alloc_base_bottom_up(phys_addr_t size, phys_addr_t align, p
 
 	if (alloc == 0)
 		printk("ERROR: Failed to allocate 0x%llx bytes below 0x%llx.\n",
-		      (unsigned long long) size, (unsigned long long) max_addr);
+		       (unsigned long long)size, (unsigned long long)max_addr);
 
 	return alloc;
 }
 
-
-phys_addr_t tspblock_alloc_base(phys_addr_t size, phys_addr_t align, phys_addr_t max_addr)
+phys_addr_t tspblock_alloc_base(phys_addr_t size, phys_addr_t align,
+				phys_addr_t max_addr)
 {
 	phys_addr_t alloc;
 
@@ -990,7 +987,7 @@ phys_addr_t tspblock_alloc_base(phys_addr_t size, phys_addr_t align, phys_addr_t
 
 	if (alloc == 0)
 		printk("ERROR: Failed to allocate 0x%llx bytes below 0x%llx.\n",
-		      (unsigned long long) size, (unsigned long long) max_addr);
+		       (unsigned long long)size, (unsigned long long)max_addr);
 
 	return alloc;
 }
@@ -998,42 +995,41 @@ phys_addr_t tspblock_alloc_base(phys_addr_t size, phys_addr_t align, phys_addr_t
 /* align should not be 0 */
 phys_addr_t tspblock_alloc(phys_addr_t size, phys_addr_t align)
 {
-        BUG_ON(align == 0);
+	BUG_ON(align == 0);
 	return tspblock_alloc_base(size, align, TSPBLOCK_ALLOC_ACCESSIBLE);
 }
-
 
 /* align should not be 0 */
 phys_addr_t tspblock_alloc_bottom_up(phys_addr_t size, phys_addr_t align)
 {
-        BUG_ON(align == 0);
-	return tspblock_alloc_base_bottom_up(size, align, TSPBLOCK_ALLOC_ACCESSIBLE);
+	BUG_ON(align == 0);
+	return tspblock_alloc_base_bottom_up(size, align,
+					     TSPBLOCK_ALLOC_ACCESSIBLE);
 }
 
-phys_addr_t tspblock_alloc_try_nid_bottom_up(phys_addr_t size, phys_addr_t align, int nid)
+phys_addr_t tspblock_alloc_try_nid_bottom_up(phys_addr_t size,
+					     phys_addr_t align, int nid)
 {
-        phys_addr_t res;
-        BUG_ON(align == 0);
+	phys_addr_t res;
+	BUG_ON(align == 0);
 	res = tspblock_alloc_nid_bottom_up(size, align, nid);
 
 	if (res)
 		return res;
-	return tspblock_alloc_base_bottom_up(size, align, TSPBLOCK_ALLOC_ACCESSIBLE);
+	return tspblock_alloc_base_bottom_up(size, align,
+					     TSPBLOCK_ALLOC_ACCESSIBLE);
 }
-
-
 
 phys_addr_t tspblock_alloc_try_nid(phys_addr_t size, phys_addr_t align, int nid)
 {
-        phys_addr_t res;
-        BUG_ON(align == 0);
+	phys_addr_t res;
+	BUG_ON(align == 0);
 	res = tspblock_alloc_nid(size, align, nid);
 
 	if (res)
 		return res;
 	return tspblock_alloc_base(size, align, TSPBLOCK_ALLOC_ACCESSIBLE);
 }
-
 
 /*
  * Remaining API functions
@@ -1045,16 +1041,17 @@ phys_addr_t tspblock_phys_mem_size(void)
 }
 
 /* lowest address */
-phys_addr_t  tspblock_start_of_DRAM(void)
+phys_addr_t tspblock_start_of_DRAM(void)
 {
 	return tspblock.memory.regions[0].base;
 }
 
-phys_addr_t  tspblock_end_of_DRAM(void)
+phys_addr_t tspblock_end_of_DRAM(void)
 {
 	int idx = tspblock.memory.cnt - 1;
 
-	return (tspblock.memory.regions[idx].base + tspblock.memory.regions[idx].size);
+	return (tspblock.memory.regions[idx].base +
+		tspblock.memory.regions[idx].size);
 }
 
 void tspblock_enforce_memory_limit(phys_addr_t limit)
@@ -1078,10 +1075,11 @@ void tspblock_enforce_memory_limit(phys_addr_t limit)
 
 	/* truncate both memory and reserved regions */
 	__tspblock_remove(&tspblock.memory, max_addr, (phys_addr_t)ULLONG_MAX);
-	__tspblock_remove(&tspblock.reserved, max_addr, (phys_addr_t)ULLONG_MAX);
+	__tspblock_remove(&tspblock.reserved, max_addr,
+			  (phys_addr_t)ULLONG_MAX);
 }
 
-static int  tspblock_search(struct tspblock_type *type, phys_addr_t addr)
+static int tspblock_search(struct tspblock_type *type, phys_addr_t addr)
 {
 	unsigned int left = 0, right = type->cnt;
 
@@ -1090,8 +1088,8 @@ static int  tspblock_search(struct tspblock_type *type, phys_addr_t addr)
 
 		if (addr < type->regions[mid].base)
 			right = mid;
-		else if (addr >= (type->regions[mid].base +
-				  type->regions[mid].size))
+		else if (addr >=
+			 (type->regions[mid].base + type->regions[mid].size))
 			left = mid + 1;
 		else
 			return mid;
@@ -1104,7 +1102,7 @@ int tspblock_is_reserved(phys_addr_t addr)
 	return tspblock_search(&tspblock.reserved, addr) != -1;
 }
 
-int  tspblock_is_memory(phys_addr_t addr)
+int tspblock_is_memory(phys_addr_t addr)
 {
 	return tspblock_search(&tspblock.memory, addr) != -1;
 }
@@ -1119,7 +1117,7 @@ int  tspblock_is_memory(phys_addr_t addr)
  * RETURNS:
  * 0 if false, non-zero if true
  */
-int  tspblock_is_region_memory(phys_addr_t base, phys_addr_t size)
+int tspblock_is_region_memory(phys_addr_t base, phys_addr_t size)
 {
 	int idx = tspblock_search(&tspblock.memory, base);
 	phys_addr_t end = base + tspblock_cap_size(base, &size);
@@ -1127,8 +1125,8 @@ int  tspblock_is_region_memory(phys_addr_t base, phys_addr_t size)
 	if (idx == -1)
 		return 0;
 	return tspblock.memory.regions[idx].base <= base &&
-		(tspblock.memory.regions[idx].base +
-		 tspblock.memory.regions[idx].size) >= end;
+	       (tspblock.memory.regions[idx].base +
+		tspblock.memory.regions[idx].size) >= end;
 }
 
 /**
@@ -1141,13 +1139,13 @@ int  tspblock_is_region_memory(phys_addr_t base, phys_addr_t size)
  * RETURNS:
  * 0 if false, non-zero if true
  */
-int  tspblock_is_region_reserved(phys_addr_t base, phys_addr_t size)
+int tspblock_is_region_reserved(phys_addr_t base, phys_addr_t size)
 {
 	tspblock_cap_size(base, &size);
 	return tspblock_overlaps_region(&tspblock.reserved, base, size) >= 0;
 }
 
-void  tspblock_trim_memory(phys_addr_t align)
+void tspblock_trim_memory(phys_addr_t align)
 {
 	int i;
 	phys_addr_t start, end, orig_start, orig_end;
@@ -1172,12 +1170,12 @@ void  tspblock_trim_memory(phys_addr_t align)
 	}
 }
 
-void  tspblock_set_current_limit(phys_addr_t limit)
+void tspblock_set_current_limit(phys_addr_t limit)
 {
 	tspblock.current_limit = limit;
 }
 
-static void  tspblock_dump(struct tspblock_type *type, char *name)
+static void tspblock_dump(struct tspblock_type *type, char *name)
 {
 	unsigned long long base, size;
 	int i;
@@ -1193,12 +1191,12 @@ static void  tspblock_dump(struct tspblock_type *type, char *name)
 		if (tspblock_get_region_node(rgn) != MCK_MAX_NUMNODES)
 			snprintf(nid_buf, sizeof(nid_buf), " on node %d",
 				 tspblock_get_region_node(rgn));
-		pr_info(" %s[%#x]\t[%#016llx-%#016llx], %#llx bytes%s\n",
-			name, i, base, base + size - 1, size, nid_buf);
+		pr_info(" %s[%#x]\t[%#016llx-%#016llx], %#llx bytes%s\n", name,
+			i, base, base + size - 1, size, nid_buf);
 	}
 }
 
-void  __tspblock_dump_all(void)
+void __tspblock_dump_all(void)
 {
 	pr_info("tspblock configuration:\n");
 	pr_info(" memory size = %#llx reserved size = %#llx\n",
@@ -1215,123 +1213,123 @@ void tspblock_allow_resize(void)
 	tspblock_can_resize = 1;
 }
 
-static void  tspblock_dump_show(struct seq_file *m,struct tspblock_type *type, char *name)
+static void tspblock_dump_show(struct seq_file *m, struct tspblock_type *type,
+			       char *name)
 {
-    unsigned long long base, size;
-    int i;
+	unsigned long long base, size;
+	int i;
 
-    for (i = 0; i < type->cnt; i++) {
-        struct tspblock_region *rgn = &type->regions[i];
-        char nid_buf[32] = "";
+	for (i = 0; i < type->cnt; i++) {
+		struct tspblock_region *rgn = &type->regions[i];
+		char nid_buf[32] = "";
 
-        base = rgn->base;
-        size = rgn->size;
-        if (tspblock_get_region_node(rgn) != MCK_MAX_NUMNODES)
-            snprintf(nid_buf, sizeof(nid_buf), " on node %d",
-                    tspblock_get_region_node(rgn));
-        seq_printf(m," %s[%#x]\t[%#016llx-%#016llx], %#llx bytes%s\n",
-                name, i, base, base + size - 1, size, nid_buf);
-    }
+		base = rgn->base;
+		size = rgn->size;
+		if (tspblock_get_region_node(rgn) != MCK_MAX_NUMNODES)
+			snprintf(nid_buf, sizeof(nid_buf), " on node %d",
+				 tspblock_get_region_node(rgn));
+		seq_printf(m, " %s[%#x]\t[%#016llx-%#016llx], %#llx bytes%s\n",
+			   name, i, base, base + size - 1, size, nid_buf);
+	}
 }
 
 static int tspblock_proc_show(struct seq_file *m, void *v)
 {
-    if (tspblock.memory.total_size > 0)
-    {
-        seq_printf(m, " Memory total_size = %#llx bytes\n",
-                (unsigned long long)tspblock.memory.total_size);
-        tspblock_dump_show(m,&tspblock.memory, "memory");
-    }
-    if (tspblock.reserved.total_size > 0)
-    {
-        seq_printf(m, " Reserved total_size = %#llx bytes\n",
-                (unsigned long long)tspblock.reserved.total_size);
-        tspblock_dump_show(m,&tspblock.reserved, "reserved");
-    }
-    return 0;
+	if (tspblock.memory.total_size > 0) {
+		seq_printf(m, " Memory total_size = %#llx bytes\n",
+			   (unsigned long long)tspblock.memory.total_size);
+		tspblock_dump_show(m, &tspblock.memory, "memory");
+	}
+	if (tspblock.reserved.total_size > 0) {
+		seq_printf(m, " Reserved total_size = %#llx bytes\n",
+			   (unsigned long long)tspblock.reserved.total_size);
+		tspblock_dump_show(m, &tspblock.reserved, "reserved");
+	}
+	return 0;
 }
 
 static int tspblock_proc_open(struct inode *inode, struct file *file)
 {
-    return single_open(file, tspblock_proc_show, NULL);
+	return single_open(file, tspblock_proc_show, NULL);
 }
 
 static const struct proc_ops tspblock_proc_fops = {
-    .proc_open       = tspblock_proc_open,
-    .proc_read       = seq_read,
-    .proc_lseek      = seq_lseek,
-    .proc_release    = seq_release_private,
+	.proc_open = tspblock_proc_open,
+	.proc_read = seq_read,
+	.proc_lseek = seq_lseek,
+	.proc_release = seq_release_private,
 };
 
 static int __init proc_tspblock_init(void)
 {
-        proc_create("tspblock", 0444, NULL, &tspblock_proc_fops);
-        return 0;
+	proc_create("tspblock", 0444, NULL, &tspblock_proc_fops);
+	return 0;
 }
 fs_initcall(proc_tspblock_init);
 
 void tsp_destroy(struct tsp *tsp)
 {
-        if (!tsp)
-                return 0;
+	if (!tsp)
+		return 0;
 
-        if (tsp->code_segment_paddr && tsp->code_segment_size)
-                tspblock_free(tsp->code_segment_paddr, tsp->code_segment_size);
+	if (tsp->code_segment_paddr && tsp->code_segment_size)
+		tspblock_free(tsp->code_segment_paddr, tsp->code_segment_size);
 
-        if (tsp->heap_segment_paddr && tsp->heap_segment_size)
-                tspblock_free(tsp->heap_segment_paddr, tsp->heap_segment_size);
+	if (tsp->heap_segment_paddr && tsp->heap_segment_size)
+		tspblock_free(tsp->heap_segment_paddr, tsp->heap_segment_size);
 
-        if (tsp->mmap_segment_paddr && tsp->mmap_segment_size)
-                tspblock_free(tsp->mmap_segment_paddr, tsp->mmap_segment_size);
+	if (tsp->mmap_segment_paddr && tsp->mmap_segment_size)
+		tspblock_free(tsp->mmap_segment_paddr, tsp->mmap_segment_size);
 
-        if (tsp->stack_segment_paddr && tsp->stack_segment_size)
-                tspblock_free(tsp->stack_segment_paddr, tsp->stack_segment_size);
+	if (tsp->stack_segment_paddr && tsp->stack_segment_size)
+		tspblock_free(tsp->stack_segment_paddr,
+			      tsp->stack_segment_size);
 
-        kfree(tsp);
+	kfree(tsp);
 }
 
-struct tsp * tsp_alloc(unsigned long code_size, unsigned long heap_size,
-                unsigned long mmap_size, unsigned long stack_size)
+struct tsp *tsp_alloc(unsigned long code_size, unsigned long heap_size,
+		      unsigned long mmap_size, unsigned long stack_size)
 {
-        struct tsp *tsp = NULL;
+	struct tsp *tsp = NULL;
 
 	tsp = kzalloc(sizeof(struct tsp), GFP_KERNEL);
 	if (!tsp)
 		return ERR_PTR(-ENOMEM);
 
-        tsp->code_segment_paddr = tspblock_alloc(code_size, PAGE_SIZE);
-        if (!tsp->code_segment_paddr)  {
-                tsp_destroy(tsp);
+	tsp->code_segment_paddr = tspblock_alloc(code_size, PAGE_SIZE);
+	if (!tsp->code_segment_paddr) {
+		tsp_destroy(tsp);
 		return ERR_PTR(-ENOMEM);
-        }
-        tsp->code_segment_size = code_size;
+	}
+	tsp->code_segment_size = code_size;
 
-        tsp->heap_segment_paddr = tspblock_alloc(heap_size, PAGE_SIZE);
-        if (!tsp->heap_segment_paddr)  {
-                tsp_destroy(tsp);
+	tsp->heap_segment_paddr = tspblock_alloc(heap_size, PAGE_SIZE);
+	if (!tsp->heap_segment_paddr) {
+		tsp_destroy(tsp);
 		return ERR_PTR(-ENOMEM);
-        }
-        tsp->heap_segment_size = heap_size;
+	}
+	tsp->heap_segment_size = heap_size;
 
-        tsp->mmap_segment_paddr = tspblock_alloc(mmap_size, PAGE_SIZE);
-        if (!tsp->mmap_segment_paddr)  {
-                tsp_destroy(tsp);
+	tsp->mmap_segment_paddr = tspblock_alloc(mmap_size, PAGE_SIZE);
+	if (!tsp->mmap_segment_paddr) {
+		tsp_destroy(tsp);
 		return ERR_PTR(-ENOMEM);
-        }
-        tsp->mmap_segment_size = mmap_size;
+	}
+	tsp->mmap_segment_size = mmap_size;
 
-        tsp->stack_segment_paddr = tspblock_alloc(stack_size, PAGE_SIZE);
-        if (!tsp->stack_segment_paddr)  {
-                tsp_destroy(tsp);
+	tsp->stack_segment_paddr = tspblock_alloc(stack_size, PAGE_SIZE);
+	if (!tsp->stack_segment_paddr) {
+		tsp_destroy(tsp);
 		return ERR_PTR(-ENOMEM);
-        }
-        tsp->stack_segment_size = stack_size;
+	}
+	tsp->stack_segment_size = stack_size;
 
-        tsp->mm = current->mm;
-        tsp->task = current;
+	tsp->mm = current->mm;
+	tsp->task = current;
 	atomic_set(&tsp->users_count, 0);
 
-        return tsp;
+	return tsp;
 }
 
 void get_tsp(struct tsp *tsp)
@@ -1355,10 +1353,8 @@ static int tsp_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static long tsp_ioctl(struct file *filp, unsigned int ioctl,
-			     unsigned long arg)
+static long tsp_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 {
-
 	struct tsp *tsp = filp->private_data;
 	void __user *argp = (void __user *)arg;
 	int r;

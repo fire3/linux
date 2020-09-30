@@ -50,8 +50,8 @@ BreakBeforeBraces: Custom
 BreakBeforeTernaryOperators: false
 BreakConstructorInitializersBeforeComma: false
 #BreakConstructorInitializers: BeforeComma # Unknown to clang-format-4.0
-BreakAfterJavaFieldAnnotations: false
-BreakStringLiterals: false
+#BreakAfterJavaFieldAnnotations: false #Unknown to clang-format-3.8
+#BreakStringLiterals: false #Unknown to clang-format-3.8
 ColumnLimit: 80
 CommentPragmas: '^ IWYU pragma:'
 #CompactNamespaces: false # Unknown to clang-format-4.0
@@ -80,6 +80,7 @@ ForEachMacros:
   - 'ax25_uid_for_each'
   - '__bio_for_each_bvec'
   - 'bio_for_each_bvec'
+  - 'bio_for_each_bvec_all'
   - 'bio_for_each_integrity_vec'
   - '__bio_for_each_segment'
   - 'bio_for_each_segment'
@@ -481,13 +482,13 @@ ForEachMacros:
 IncludeCategories:
   - Regex: '.*'
     Priority: 1
-IncludeIsMainRegex: '(Test)?$'
+#IncludeIsMainRegex: '(Test)?$' #Unknown to clang-format-4.0
 IndentCaseLabels: false
 #IndentPPDirectives: None # Unknown to clang-format-5.0
 IndentWidth: 8
 IndentWrappedFunctionNames: false
-JavaScriptQuotes: Leave
-JavaScriptWrapImports: true
+#JavaScriptQuotes: Leave # Unknown to clang-format-3.8
+#JavaScriptWrapImports: true # Unknown to clang-format-3.8
 KeepEmptyLinesAtTheStartOfBlocks: false
 MacroBlockBegin: ''
 MacroBlockEnd: ''
@@ -512,7 +513,7 @@ ReflowComments: false
 SortIncludes: false
 #SortUsingDeclarations: false # Unknown to clang-format-4.0
 SpaceAfterCStyleCast: false
-SpaceAfterTemplateKeyword: true
+#SpaceAfterTemplateKeyword: true # Unknown to clang-format-3.8
 SpaceBeforeAssignmentOperators: true
 #SpaceBeforeCtorInitializerColon: true # Unknown to clang-format-5.0
 #SpaceBeforeInheritanceColon: true # Unknown to clang-format-5.0
