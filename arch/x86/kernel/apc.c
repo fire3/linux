@@ -26,9 +26,10 @@ static int apc_ioctl_create_tsp(struct apc_create_tsp *c)
 {
 	int error, fd;
 	struct file *file = NULL;
-        struct tsp *tsp = NULL; 
+	struct tsp *tsp = NULL;
 
-        tsp = tsp_alloc(c->code_size, c->heap_size, c->mmap_size, c->stack_size);
+	tsp = tsp_alloc(c->code_size, c->heap_size, c->mmap_size,
+			c->stack_size);
 	if (IS_ERR(tsp)) {
 		fd = PTR_ERR(tsp);
 		goto out;
@@ -50,33 +51,34 @@ static int apc_ioctl_create_tsp(struct apc_create_tsp *c)
 	}
 	get_tsp(tsp);
 	fd_install(fd, file);
+	current->mm->tsp = tsp;
 out:
-        return fd;
+	return fd;
 }
 
 static int apc_dev_release(struct inode *inode, struct file *filp)
 {
-        return 0;
+	return 0;
 }
 
 static long apc_dev_ioctl(struct file *filp, unsigned int ioctl,
-			    unsigned long arg)
+			  unsigned long arg)
 {
 	long r = -EINVAL;
 	void __user *argp = (void __user *)arg;
-        
+
 	switch (ioctl) {
-                case APC_CREATE_TSP: {
-                        struct apc_create_tsp c;
-                        r = -EFAULT;
-		        if (copy_from_user(&c, argp, sizeof c))
-		        	goto out;
-                        r =  apc_ioctl_create_tsp(&c);
-                        break;
-                }
-        	default:
-		        r = -EOPNOTSUPP;
-		        return r;
+	case APC_CREATE_TSP: {
+		struct apc_create_tsp c;
+		r = -EFAULT;
+		if (copy_from_user(&c, argp, sizeof c))
+			goto out;
+		r = apc_ioctl_create_tsp(&c);
+		break;
+	}
+	default:
+		r = -EOPNOTSUPP;
+		return r;
 	}
 out:
 	return r;
@@ -89,14 +91,12 @@ static struct file_operations apc_chardev_ops = {
 	.llseek = noop_llseek,
 };
 
-
 static struct miscdevice apc_dev = {
 	APC_MINOR, "apc", &apc_chardev_ops,
 };
 
-
 int __init apc_device_init(void)
 {
-        return misc_register(&apc_dev);
+	return misc_register(&apc_dev);
 }
 device_initcall(apc_device_init);
