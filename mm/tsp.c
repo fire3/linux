@@ -30,13 +30,18 @@
 #include <linux/llist.h>
 #include <linux/cma.h>
 
-#include <asm/page.h>
-#include <asm/pgtable.h>
+#include <asm/io.h>
+#include <asm/mmu_context.h>
+#include <asm/pgalloc.h>
+#include <linux/uaccess.h>
 #include <asm/tlb.h>
+#include <asm/tlbflush.h>
+#include <asm/pgtable.h>
 
 #include <linux/proc_fs.h>
 #include <linux/miscdevice.h>
 #include <linux/tsp.h>
+#include <asm/tsp.h>
 
 static unsigned long tsp_reserve_size __initdata;
 static bool tsp_reserve_called __initdata;
@@ -1270,7 +1275,7 @@ fs_initcall(proc_tspblock_init);
 void tsp_destroy(struct tsp *tsp)
 {
 	if (!tsp)
-		return 0;
+		return;
 
 	if (tsp->code_segment_paddr && tsp->code_segment_size)
 		tspblock_free(tsp->code_segment_paddr, tsp->code_segment_size);
@@ -1366,3 +1371,187 @@ struct file_operations tsp_fops = {
 	.compat_ioctl = tsp_ioctl,
 	.llseek = noop_llseek,
 };
+
+void dup_tsp_page(struct page *old_page, struct page *tsp_page)
+{
+    unsigned long flags;
+    flags = (old_page->flags) & ((1UL << NR_PAGEFLAGS) - 1);
+    tsp_page->flags =  (tsp_page->flags & (~(1UL << NR_PAGEFLAGS) - 1)) | flags;
+    SetPageSegment(tsp_page);
+    ClearPageLRU(tsp_page);
+
+    tsp_page->tsp_buddy_page = old_page;
+    tsp_page->mapping = old_page->mapping;                              
+    tsp_page->_refcount.counter = old_page->_refcount.counter;
+    tsp_page->_mapcount.counter = old_page->_mapcount.counter;
+    tsp_page->index = old_page->index;
+#ifdef CONFIG_MEMCG
+    tsp_page->mem_cgroup = old_page->mem_cgroup;
+#endif
+}
+
+
+unsigned long tsp_vaddr_to_paddr(struct tsp *tsp, unsigned long vaddr)
+{
+	unsigned long offset;
+	BUG_ON(tsp == NULL);
+
+	if (tsp_vaddr_is_code(vaddr)) {
+		offset = vaddr - TSP_SEGMENT_BASE_CODE;
+		if (offset > tsp->code_segment_size)
+			return 0;
+		return (tsp->code_segment_paddr + offset);
+	} else if (tsp_vaddr_is_heap(vaddr)) {
+		offset = vaddr - TSP_SEGMENT_BASE_HEAP;
+		if (offset > tsp->heap_segment_size)
+			return 0;
+		return (tsp->heap_segment_paddr + offset);
+	} else if (tsp_vaddr_is_mmap(vaddr)) {
+		offset = vaddr - TSP_SEGMENT_BASE_MMAP;
+		if (offset > tsp->mmap_segment_size)
+			return 0;
+		return (tsp->mmap_segment_paddr + offset);
+	} else if (tsp_vaddr_is_stack(vaddr)) {
+		offset = TSP_SEGMENT_TOP_STACK + 1 - vaddr;
+		if (offset > tsp->stack_segment_size)
+			return 0;
+		return (tsp->stack_segment_paddr + tsp->stack_segment_size -
+			offset);
+	} else {
+		return 0;
+	}
+}
+
+static int swap_pte_range(struct mm_struct *mm, pmd_t *pmd, unsigned long addr,
+			  unsigned long end, pgprot_t prot)
+{
+	pte_t *pte;
+	int err = 0;
+	struct tsp *tsp = mm->tsp;
+	unsigned long tsp_paddr, pte_paddr;
+	struct page *old_page, *new_page;
+	pgprot_t old_prot;
+
+	if (tsp == NULL)
+		return -ENOMEM;
+
+	pte = pte_offset_map(pmd, addr);
+	if (!pte)
+		return -ENOMEM;
+	arch_enter_lazy_mmu_mode();
+	do {
+		if (!pte_present(*pte))
+			continue;
+		pte_paddr = (pte_pfn(*pte)) << PAGE_SHIFT;
+		tsp_paddr = tsp_vaddr_to_paddr(tsp, addr);
+		if (tsp_paddr == 0)
+			continue;
+
+		copy_page((void *)__va(tsp_paddr), (void *)__va(pte_paddr));
+		old_prot = pte_pgprot(*pte);
+		*pte = pfn_pte(tsp_paddr >> PAGE_SHIFT, old_prot);
+		// Avoid copy-on-write for some file page
+		if (!pte_write(*pte))
+			*pte = pte_mkwrite(*pte);
+		old_page = pfn_to_page(pte_paddr >> PAGE_SHIFT);
+		new_page = pfn_to_page(tsp_paddr >> PAGE_SHIFT);
+
+		dup_tsp_page(old_page, new_page);
+	} while (pte++, addr += PAGE_SIZE, addr != end);
+	arch_leave_lazy_mmu_mode();
+	return err;
+}
+
+static inline int swap_pmd_range(struct mm_struct *mm, pud_t *pud,
+				 unsigned long addr, unsigned long end,
+				 pgprot_t prot)
+{
+	pmd_t *pmd;
+	unsigned long next;
+	int err;
+
+	pmd = pmd_offset(pud, addr);
+	if (!pmd)
+		return -ENOMEM;
+	VM_BUG_ON(pmd_trans_huge(*pmd));
+	do {
+		next = pmd_addr_end(addr, end);
+		err = swap_pte_range(mm, pmd, addr, next, prot);
+		if (err)
+			return err;
+	} while (pmd++, addr = next, addr != end);
+	return 0;
+}
+
+static inline int swap_pud_range(struct mm_struct *mm, p4d_t *p4d,
+				 unsigned long addr, unsigned long end,
+				 pgprot_t prot)
+{
+	pud_t *pud;
+	unsigned long next;
+	int err;
+
+	pud = pud_offset(p4d, addr);
+	if (!pud)
+		return -ENOMEM;
+	do {
+		next = pud_addr_end(addr, end);
+		err = swap_pmd_range(mm, pud, addr, next, prot);
+		if (err)
+			return err;
+	} while (pud++, addr = next, addr != end);
+	return 0;
+}
+
+static inline int swap_p4d_range(struct mm_struct *mm, pgd_t *pgd,
+				 unsigned long addr, unsigned long end,
+				 pgprot_t prot)
+{
+	p4d_t *p4d;
+	unsigned long next;
+	int err;
+
+	p4d = p4d_offset(pgd, addr);
+	if (!p4d)
+		return -ENOMEM;
+	do {
+		next = p4d_addr_end(addr, end);
+		err = swap_pud_range(mm, p4d, addr, next, prot);
+		if (err)
+			return err;
+	} while (p4d++, addr = next, addr != end);
+	return 0;
+}
+
+/**
+ * swap_tsp_range - swap paged memory to segmented space
+ * @vma: user vma to swap to
+ * @addr: target user address to start at
+ * @size: size of mapping area
+ * @prot: page protection flags for this mapping
+ *
+ * Note: this is only safe if the mm semaphore is held when called.
+ *
+ * Return: %0 on success, negative error code otherwise.
+ */
+int swap_tsp_range(struct vm_area_struct *vma, unsigned long addr,
+		   unsigned long size, pgprot_t prot)
+{
+	pgd_t *pgd;
+	unsigned long next;
+	unsigned long end = addr + PAGE_ALIGN(size);
+	struct mm_struct *mm = vma->vm_mm;
+	int err;
+
+	BUG_ON(addr >= end);
+	pgd = pgd_offset(mm, addr);
+	flush_cache_range(vma, addr, end);
+	do {
+		next = pgd_addr_end(addr, end);
+		err = swap_p4d_range(mm, pgd, addr, next, prot);
+		if (err)
+			break;
+	} while (pgd++, addr = next, addr != end);
+
+	return err;
+}

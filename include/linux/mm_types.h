@@ -219,6 +219,9 @@ struct page {
 #ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
 	int _last_cpupid;
 #endif
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	struct page *tsp_buddy_page;
+#endif
 } _struct_page_alignment;
 
 static inline atomic_t *compound_mapcount_ptr(struct page *page)

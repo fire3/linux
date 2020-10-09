@@ -1151,6 +1151,21 @@ out_free_interp:
 #endif
 
 	finalize_exec(bprm);
+
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+        current->mm->brk = current->mm->start_brk = TASK_HEAP_BASE;
+#endif
+
+#if 0
+        printk("[%s %d] [brk = %#lx %#lx] [code = %#lx-%#lx] [data = %#lx-%#lx] [stack = %#lx]\n",
+                        current->comm, current->pid, 
+                        current->mm->brk, current->mm->start_brk,
+                        current->mm->start_code, 
+                        current->mm->end_code, 
+                        current->mm->start_data,
+                        current->mm->end_data,
+                        current->mm->start_stack);
+#endif
 	start_thread(regs, elf_entry, bprm->p);
 	retval = 0;
 out:

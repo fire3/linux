@@ -925,6 +925,7 @@ extern void start_thread(struct pt_regs *regs, unsigned long new_ip,
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 #define __TASK_UNMAPPED_BASE(task_size) (0x400000000000UL)
 #define TASK_UNMAPPED_BASE              (0x400000000000UL)
+#define TASK_HEAP_BASE 			(0x200000000000UL)
 #else
 #define __TASK_UNMAPPED_BASE(task_size)	(PAGE_ALIGN(task_size / 3))
 #define TASK_UNMAPPED_BASE		__TASK_UNMAPPED_BASE(TASK_SIZE_LOW)

@@ -222,17 +222,14 @@ struct tsp {
         struct mm_struct        *mm;
         struct task_struct      *task;
         unsigned long code_segment_paddr;
-        unsigned long code_segment_vaddr;
         unsigned long code_segment_size;
         unsigned long heap_segment_paddr;
-        unsigned long heap_segment_vaddr;
         unsigned long heap_segment_size;
         unsigned long mmap_segment_paddr;
-        unsigned long mmap_segment_vaddr;
         unsigned long mmap_segment_size;
         unsigned long stack_segment_paddr;
-        unsigned long stack_segment_vaddr;
         unsigned long stack_segment_size;
+	int is_remaped;
 };
 
 struct tsp * tsp_alloc(unsigned long code_size, unsigned long heap_size,
