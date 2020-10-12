@@ -207,12 +207,8 @@ static inline unsigned long tspblock_region_reserved_end_pfn(const struct tspblo
 
 int tspblock_internal_test(void);
 
-#define TSPBLOCKIO 0xAF
+#define TSPIO 0xAF
 
-/*
- * ioctls for /dev/mck fds:
- */
-#define TSPBLOCK_GET_API_VERSION       _IO(TSPBLOCKIO,   0x00)
 #define TSPBLOCK_ALLOC                 _IOWR(TSPBLOCKIO, 0x02, void *)
 #define TSPBLOCK_FREE                  _IOWR(TSPBLOCKIO, 0x03, unsigned long)
 
@@ -229,7 +225,7 @@ struct tsp {
         unsigned long mmap_segment_size;
         unsigned long stack_segment_paddr;
         unsigned long stack_segment_size;
-	int is_remaped;
+	int is_remapped;
 };
 
 struct tsp * tsp_alloc(unsigned long code_size, unsigned long heap_size,
@@ -237,6 +233,8 @@ struct tsp * tsp_alloc(unsigned long code_size, unsigned long heap_size,
 void get_tsp(struct tsp *tsp);
 void put_tsp(struct tsp *tsp);
 extern struct file_operations tsp_fops;
+int tsp_swap_current(void);
+void put_tsp_page(struct page *page);
 #endif
 
 

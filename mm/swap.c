@@ -41,6 +41,10 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/pagemap.h>
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#include <linux/tsp.h>
+#endif
+
 /* How many pages do we try to swap or page in/out together? */
 int page_cluster;
 
@@ -108,7 +112,6 @@ void __put_page(struct page *page)
 		 */
 		return;
 	}
-
 	if (unlikely(PageCompound(page)))
 		__put_compound_page(page);
 	else
@@ -372,6 +375,12 @@ static void __lru_cache_activate_page(struct page *page)
  */
 void mark_page_accessed(struct page *page)
 {
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (unlikely(PageTsp(page))) {
+		if (page->tsp_buddy_page)
+			page = page->tsp_buddy_page;
+	}
+#endif
 	page = compound_head(page);
 
 	if (!PageReferenced(page)) {
@@ -788,6 +797,14 @@ void release_pages(struct page **pages, int nr)
 	for (i = 0; i < nr; i++) {
 		struct page *page = pages[i];
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+		if (PageTsp(page)) {
+			put_tsp_page(page);
+			if (page->tsp_buddy_page == NULL)
+				continue;
+			page = page->tsp_buddy_page;
+		}
+#endif
 		/*
 		 * Make sure the IRQ-safe lock-holding time does not get
 		 * excessive with a continuous string of pages from the

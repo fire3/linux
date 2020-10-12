@@ -1195,7 +1195,14 @@ void page_add_new_anon_rmap(struct page *page,
 void page_add_file_rmap(struct page *page, bool compound)
 {
 	int i, nr = 1;
-
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (unlikely(PageTsp(page))) {
+		atomic_inc(&page->_mapcount);
+		if (page->tsp_buddy_page == NULL)
+			return;
+		page = page->tsp_buddy_page;
+	}
+#endif
 	VM_BUG_ON_PAGE(compound && !PageTransHuge(page), page);
 	lock_page_memcg(page);
 	if (compound && PageTransHuge(page)) {
@@ -1229,6 +1236,14 @@ static void page_remove_file_rmap(struct page *page, bool compound)
 {
 	int i, nr = 1;
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (unlikely(PageTsp(page))) {
+		atomic_dec(&page->_mapcount);
+		if (page->tsp_buddy_page == NULL)
+			return;
+		page = page->tsp_buddy_page;
+	}
+#endif
 	VM_BUG_ON_PAGE(compound && !PageHead(page), page);
 	lock_page_memcg(page);
 
@@ -1322,6 +1337,14 @@ static void page_remove_anon_compound_rmap(struct page *page)
  */
 void page_remove_rmap(struct page *page, bool compound)
 {
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (unlikely(PageTsp(page))) {
+		atomic_dec(&page->_mapcount);
+		if (page->tsp_buddy_page == NULL)
+			return;
+		page = page->tsp_buddy_page;
+	}
+#endif
 	if (!PageAnon(page))
 		return page_remove_file_rmap(page, compound);
 

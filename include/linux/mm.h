@@ -29,6 +29,7 @@
 #include <linux/sizes.h>
 #include <linux/sched.h>
 
+
 struct mempolicy;
 struct anon_vma;
 struct anon_vma_chain;
@@ -89,6 +90,9 @@ extern int mmap_rnd_bits __read_mostly;
 extern const int mmap_rnd_compat_bits_min;
 extern const int mmap_rnd_compat_bits_max;
 extern int mmap_rnd_compat_bits __read_mostly;
+#endif
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+extern void put_tsp_page(struct page *page);
 #endif
 
 #include <asm/page.h>
@@ -1133,6 +1137,16 @@ static inline bool is_pci_p2pdma_page(const struct page *page)
 
 static inline void get_page(struct page *page)
 {
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (PageTsp(page)) {
+		page = compound_head(page);
+		VM_BUG_ON_PAGE(page_ref_zero_or_close_to_overflow(page), page);
+		page_ref_inc(page);
+		if (page->tsp_buddy_page == NULL)
+			return;
+		page = page->tsp_buddy_page;
+	}
+#endif
 	page = compound_head(page);
 	/*
 	 * Getting a normal page or the head of a compound page
@@ -1146,6 +1160,17 @@ bool __must_check try_grab_page(struct page *page, unsigned int flags);
 
 static inline __must_check bool try_get_page(struct page *page)
 {
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (PageTsp(page)) {
+		page = compound_head(page);
+		if (WARN_ON_ONCE(page_ref_count(page) <= 0))
+			return false;
+		page_ref_inc(page);
+		if (page->tsp_buddy_page == NULL)
+			return true;
+		page = page->tsp_buddy_page;
+	}
+#endif
 	page = compound_head(page);
 	if (WARN_ON_ONCE(page_ref_count(page) <= 0))
 		return false;
@@ -1155,6 +1180,15 @@ static inline __must_check bool try_get_page(struct page *page)
 
 static inline void put_page(struct page *page)
 {
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (PageTsp(page)) {
+		page = compound_head(page);
+		put_tsp_page(page);
+		if (page->tsp_buddy_page == NULL)
+			return;
+		page = page->tsp_buddy_page;
+	}
+#endif
 	page = compound_head(page);
 
 	/*

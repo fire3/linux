@@ -137,7 +137,7 @@ enum pageflags {
 	PG_idle,
 #endif
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	PG_segment,
+	PG_tsp,
 #endif
 	__NR_PAGEFLAGS,
 
@@ -377,7 +377,7 @@ PAGEFLAG(Reclaim, reclaim, PF_NO_TAIL)
 PAGEFLAG(Readahead, reclaim, PF_NO_COMPOUND)
 	TESTCLEARFLAG(Readahead, reclaim, PF_NO_COMPOUND)
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-PAGEFLAG(Segment, segment, PF_ANY)
+PAGEFLAG(Tsp, tsp, PF_ANY)
 #endif
 
 #ifdef CONFIG_HIGHMEM
