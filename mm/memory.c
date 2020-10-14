@@ -84,6 +84,10 @@
 
 #include "internal.h"
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#include <linux/tsp.h>
+#endif
+
 #if defined(LAST_CPUPID_NOT_IN_PAGE_FLAGS) && !defined(CONFIG_COMPILE_TEST)
 #warning Unfortunate NUMA and NUMA Balancing config, growing page-frame for last_cpupid.
 #endif
@@ -2654,11 +2658,46 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 		goto oom;
 
 	if (is_zero_pfn(pte_pfn(vmf->orig_pte))) {
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+		if (is_current_tsp_swapped()) {
+			new_page = alloc_zeroed_tsp_page(vma, vmf->address);
+		} else {
+			new_page = alloc_zeroed_user_highpage_movable(vma,
+							      vmf->address);
+		}
+#else
 		new_page = alloc_zeroed_user_highpage_movable(vma,
 							      vmf->address);
+#endif
 		if (!new_page)
 			goto oom;
 	} else {
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+		if (is_current_tsp_swapped()) {
+			struct page *tmp_page;
+			VM_BUG_ON_VMA(!old_page, vma);
+			VM_BUG_ON_VMA(!PageTsp(old_page), vma);
+			new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE,
+					          vma, vmf->address);
+			tmp_page = old_page->tsp_buddy_page;
+			dup_tsp_page(new_page, old_page);
+			__free_pages(new_page, 0);
+			new_page = old_page;
+			new_page->tsp_buddy_page = NULL;
+			old_page = tmp_page;
+		} else {
+			new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma,
+					    	  vmf->address);
+			if (!new_page)
+				goto oom;
+			if (!cow_user_page(new_page, old_page, vmf)) {
+				put_page(new_page);
+				if (old_page)
+					put_page(old_page);
+				return 0;
+			}
+		}
+#else
 		new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma,
 				vmf->address);
 		if (!new_page)
@@ -2676,6 +2715,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 				put_page(old_page);
 			return 0;
 		}
+#endif
 	}
 
 	if (mem_cgroup_try_charge_delay(new_page, mm, GFP_KERNEL, &memcg, false))
@@ -3339,6 +3379,17 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 			!mm_forbids_zeropage(vma->vm_mm)) {
 		entry = pte_mkspecial(pfn_pte(my_zero_pfn(vmf->address),
 						vma->vm_page_prot));
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+		if (is_current_tsp_swapped()) {
+                        if (unlikely(anon_vma_prepare(vma)))
+                                goto oom; 
+			page = alloc_zeroed_tsp_page(vma, vmf->address);
+			inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+			page_add_new_anon_rmap(page, vma, vmf->address, false);
+                        entry = mk_pte(page, vma->vm_page_prot);
+                        entry = pte_mkwrite(pte_mkdirty(entry));
+		}
+#endif
 		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd,
 				vmf->address, &vmf->ptl);
 		if (!pte_none(*vmf->pte))
@@ -3357,7 +3408,15 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	/* Allocate our own private page. */
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
+#if CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (is_current_tsp_swapped()) {
+		page = alloc_zeroed_tsp_page(vma, vmf->address);
+	} else {
+		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+	}
+#else
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+#endif
 	if (!page)
 		goto oom;
 
@@ -3650,6 +3709,36 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 		return VM_FAULT_NOPAGE;
 
 	flush_icache_page(vma, page);
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	/* For file read into TSP page */
+	if (is_current_tsp_swapped()) {
+		//FIXME:
+		printk("alloc_set_pte: %#lx\n",vmf->address);
+		struct page *new_page;
+		unsigned long paddr;
+		paddr = tsp_vaddr_to_paddr(current->mm->tsp, vmf->address);
+		new_page = pfn_to_page(paddr >> PAGE_SHIFT);
+		copy_page(page_address(new_page), page_address(page));
+    		entry = mk_pte(new_page, vma->vm_page_prot);
+        	if (write)
+			entry = maybe_mkwrite(pte_mkdirty(entry), vma);
+		if (write && !(vma->vm_flags & VM_SHARED)) {
+			inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+			page_add_new_anon_rmap(page, vma, vmf->address, false);
+			mem_cgroup_commit_charge(page, memcg, false, false);
+			lru_cache_add_active_or_unevictable(page, vma);
+		} else {
+			inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
+			page_add_file_rmap(page, false);
+		}
+		dup_tsp_page(page, new_page);
+
+		set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
+        	flush_tlb_page(vma, vmf->address);
+		update_mmu_cache(vma, vmf->address, vmf->pte);
+		return 0;
+	}
+#endif
 	entry = mk_pte(page, vma->vm_page_prot);
 	if (write)
 		entry = maybe_mkwrite(pte_mkdirty(entry), vma);

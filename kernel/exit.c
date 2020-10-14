@@ -69,6 +69,10 @@
 #include <asm/pgtable.h>
 #include <asm/mmu_context.h>
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#include <linux/tsp.h>
+#endif
+
 static void __unhash_process(struct task_struct *p, bool group_dead)
 {
 	nr_threads--;
@@ -435,6 +439,9 @@ static void exit_mm(void)
 	exit_mm_release(current, mm);
 	if (!mm)
 		return;
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	tsp_check_current();
+#endif
 	sync_mm_rss(mm);
 	/*
 	 * Serialize with any possible pending coredump.

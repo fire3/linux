@@ -44,6 +44,8 @@
 #include <asm/tsp.h>
 #include <uapi/linux/tsp.h>
 
+#include "internal.h"
+
 #define TSP_DEBUG 1
 
 static unsigned long tsp_reserve_size __initdata;
@@ -1433,6 +1435,51 @@ unsigned long tsp_vaddr_to_paddr(struct tsp *tsp, unsigned long vaddr)
 	}
 }
 
+static int check_tsp_pte_range(struct mm_struct *mm, pmd_t *pmd,
+			       unsigned long addr, unsigned long end,
+			       pgprot_t prot)
+{
+	pte_t *pte;
+	int err = 0;
+	struct tsp *tsp = mm->tsp;
+	unsigned long tsp_paddr, pte_paddr;
+	struct page *old_page, *new_page;
+	pgprot_t old_prot;
+
+	if (tsp == NULL)
+		return -EFAULT;
+	pte = pte_offset_map(pmd, addr);
+	arch_enter_lazy_mmu_mode();
+	do {
+		if (!pte_present(*pte))
+			continue;
+		pte_paddr = (pte_pfn(*pte)) << PAGE_SHIFT;
+		if (tsp_vaddr_is_code(addr)) {
+			if (pte_paddr < tsp->code_segment_paddr ||
+			    pte_paddr > (tsp->code_segment_paddr +
+					 tsp->code_segment_size))
+				return -EINVAL;
+		} else if (tsp_vaddr_is_heap(addr)) {
+			if (pte_paddr < tsp->heap_segment_paddr ||
+			    pte_paddr > (tsp->heap_segment_paddr +
+					 tsp->heap_segment_size))
+				return -EINVAL;
+		} else if (tsp_vaddr_is_mmap(addr)) {
+			if (pte_paddr < tsp->mmap_segment_paddr ||
+			    pte_paddr > (tsp->mmap_segment_paddr +
+					 tsp->mmap_segment_size))
+				return -EINVAL;
+		} else if (tsp_vaddr_is_stack(addr)) {
+			if (pte_paddr < tsp->stack_segment_paddr ||
+			    pte_paddr > (tsp->stack_segment_paddr +
+					 tsp->stack_segment_size))
+				return -EINVAL;
+		}
+	} while (pte++, addr += PAGE_SIZE, addr != end);
+	arch_leave_lazy_mmu_mode();
+	return err;
+}
+
 static int swap_pte_range(struct mm_struct *mm, pmd_t *pmd, unsigned long addr,
 			  unsigned long end, pgprot_t prot)
 {
@@ -1447,8 +1494,6 @@ static int swap_pte_range(struct mm_struct *mm, pmd_t *pmd, unsigned long addr,
 		return -ENOMEM;
 
 	pte = pte_offset_map(pmd, addr);
-	if (!pte)
-		return -ENOMEM;
 	arch_enter_lazy_mmu_mode();
 	do {
 		if (!pte_present(*pte))
@@ -1479,6 +1524,25 @@ static int swap_pte_range(struct mm_struct *mm, pmd_t *pmd, unsigned long addr,
 	return err;
 }
 
+static inline int check_tsp_pmd_range(struct mm_struct *mm, pud_t *pud,
+				      unsigned long addr, unsigned long end,
+				      pgprot_t prot)
+{
+	pmd_t *pmd;
+	unsigned long next;
+	int err;
+
+	pmd = pmd_offset(pud, addr);
+	VM_BUG_ON(pmd_trans_huge(*pmd));
+	do {
+		next = pmd_addr_end(addr, end);
+		err = check_tsp_pte_range(mm, pmd, addr, next, prot);
+		if (err)
+			return err;
+	} while (pmd++, addr = next, addr != end);
+	return 0;
+}
+
 static inline int swap_pmd_range(struct mm_struct *mm, pud_t *pud,
 				 unsigned long addr, unsigned long end,
 				 pgprot_t prot)
@@ -1497,6 +1561,24 @@ static inline int swap_pmd_range(struct mm_struct *mm, pud_t *pud,
 		if (err)
 			return err;
 	} while (pmd++, addr = next, addr != end);
+	return 0;
+}
+
+static inline int check_tsp_pud_range(struct mm_struct *mm, p4d_t *p4d,
+				      unsigned long addr, unsigned long end,
+				      pgprot_t prot)
+{
+	pud_t *pud;
+	unsigned long next;
+	int err;
+
+	pud = pud_offset(p4d, addr);
+	do {
+		next = pud_addr_end(addr, end);
+		err = check_tsp_pmd_range(mm, pud, addr, next, prot);
+		if (err)
+			return err;
+	} while (pud++, addr = next, addr != end);
 	return 0;
 }
 
@@ -1520,6 +1602,26 @@ static inline int swap_pud_range(struct mm_struct *mm, p4d_t *p4d,
 	return 0;
 }
 
+static inline int check_tsp_p4d_range(struct mm_struct *mm, pgd_t *pgd,
+				 unsigned long addr, unsigned long end,
+				 pgprot_t prot)
+{
+	p4d_t *p4d;
+	unsigned long next;
+	int err;
+
+	p4d = p4d_offset(pgd, addr);
+	if (!p4d)
+		return -ENOMEM;
+	do {
+		next = p4d_addr_end(addr, end);
+		err = check_tsp_pud_range(mm, p4d, addr, next, prot);
+		if (err)
+			return err;
+	} while (p4d++, addr = next, addr != end);
+	return 0;
+}
+
 static inline int swap_p4d_range(struct mm_struct *mm, pgd_t *pgd,
 				 unsigned long addr, unsigned long end,
 				 pgprot_t prot)
@@ -1539,6 +1641,35 @@ static inline int swap_p4d_range(struct mm_struct *mm, pgd_t *pgd,
 	} while (p4d++, addr = next, addr != end);
 	return 0;
 }
+
+int check_tsp_range(struct vm_area_struct *vma, unsigned long addr,
+		   unsigned long size, pgprot_t prot)
+{
+	pgd_t *pgd;
+	unsigned long next;
+	unsigned long end = addr + PAGE_ALIGN(size);
+	struct mm_struct *mm = vma->vm_mm;
+	int err;
+
+#if TSP_DEBUG
+	printk("TSP CHECK [%lx - %lx] vm_flags %lx, vm_page_prot %lx, "
+	       "vm_pgoff: %lx , err = %d\n",
+	       addr, end, vma->vm_flags, vma->vm_page_prot.pgprot,
+	       vma->vm_pgoff, err);
+#endif
+	BUG_ON(addr >= end);
+	pgd = pgd_offset(mm, addr);
+	flush_cache_range(vma, addr, end);
+	do {
+		next = pgd_addr_end(addr, end);
+		err = check_tsp_p4d_range(mm, pgd, addr, next, prot);
+		if (err)
+			break;
+	} while (pgd++, addr = next, addr != end);
+
+	return err;
+}
+
 
 /**
  * swap_tsp_range - swap paged memory to segmented space
@@ -1579,6 +1710,41 @@ int swap_tsp_range(struct vm_area_struct *vma, unsigned long addr,
 	return err;
 }
 
+int is_current_tsp_swapped(void)
+{
+	if (current && current->mm && current->mm->tsp) {
+		return current->mm->tsp->is_swapped;
+	} else
+		return 0;
+}
+
+int tsp_check_current(void)
+{
+	struct vm_area_struct *vma;
+	unsigned long start = 0;
+	unsigned long end = 0;
+	unsigned long next = 0;
+	int err = 0;
+
+	if (!is_current_tsp_swapped())
+		return 0;
+
+	vma = current->mm->mmap;
+	down_read(&current->mm->mmap_sem);
+
+	while (vma) {
+		start = vma->vm_start;
+		end = vma->vm_end;
+		err = check_tsp_range(vma, start, end - start,
+				     vma->vm_page_prot);
+		if (err)
+			break;
+		vma = vma->vm_next;
+	}
+	up_read(&current->mm->mmap_sem);
+	return err;
+}
+
 int tsp_swap_current(void)
 {
 	struct vm_area_struct *vma;
@@ -1588,18 +1754,26 @@ int tsp_swap_current(void)
 	int err = 0;
 #if TSP_DEBUG
 	printk("tsp_swap_current %s %d\n", current->comm, current->pid);
-	printk("code: %#lx - %#lx\n", current->mm->tsp->code_segment_paddr,
+	printk("code: %#lx - %#lx (%#lx)\n",
+	       current->mm->tsp->code_segment_paddr,
 	       current->mm->tsp->code_segment_paddr +
-		       current->mm->tsp->code_segment_size);
-	printk("heap: %#lx - %#lx\n", current->mm->tsp->heap_segment_paddr,
+		       current->mm->tsp->code_segment_size,
+	       current->mm->tsp->code_segment_size);
+	printk("heap: %#lx - %#lx (%#lx)\n",
+	       current->mm->tsp->heap_segment_paddr,
 	       current->mm->tsp->heap_segment_paddr +
-		       current->mm->tsp->heap_segment_size);
-	printk("mmap: %#lx - %#lx\n", current->mm->tsp->mmap_segment_paddr,
+		       current->mm->tsp->heap_segment_size,
+	       current->mm->tsp->heap_segment_size);
+	printk("mmap: %#lx - %#lx (%#lx)\n",
+	       current->mm->tsp->mmap_segment_paddr,
 	       current->mm->tsp->mmap_segment_paddr +
-		       current->mm->tsp->mmap_segment_size);
-	printk("stack: %#lx - %#lx\n", current->mm->tsp->stack_segment_paddr,
+		       current->mm->tsp->mmap_segment_size,
+	       current->mm->tsp->mmap_segment_size);
+	printk("stack: %#lx - %#lx (%#lx)\n",
+	       current->mm->tsp->stack_segment_paddr,
 	       current->mm->tsp->stack_segment_paddr +
-		       current->mm->tsp->stack_segment_size);
+		       current->mm->tsp->stack_segment_size,
+	       current->mm->tsp->stack_segment_size);
 #endif
 
 	vma = current->mm->mmap;
@@ -1615,9 +1789,17 @@ int tsp_swap_current(void)
 		vma = vma->vm_next;
 	}
 	flush_tlb_all();
-	current->mm->tsp->is_remapped = 1;
+	current->mm->tsp->is_swapped = 1;
 	up_write(&current->mm->mmap_sem);
 	return err;
+}
+
+void free_tsp_page(struct page *page)
+{
+	set_page_private(page, 0);
+	page->mapping = NULL;
+	ClearPagePrivate(page);
+	page_mapcount_reset(page);
 }
 
 void put_tsp_page(struct page *page)
@@ -1627,10 +1809,54 @@ void put_tsp_page(struct page *page)
 	       (unsigned long)(page_to_pfn(page) << PAGE_SHIFT),
 	       page_count(page), page_mapcount(page));
 #endif
-	if (put_page_testzero(page)) {
-		set_page_private(page, 0);
-		page->mapping = NULL;
-		ClearPagePrivate(page);
-		page_mapcount_reset(page);
+	if (put_page_testzero(page))
+		free_tsp_page(page);
+}
+
+static int prep_new_tsp_page(struct page *page)
+{
+	SetPageTsp(page);
+	set_page_private(page, 0);
+	set_page_refcounted(page);
+	page_mapcount_reset(page);
+	page->tsp_buddy_page = NULL;
+	page->mapping = NULL;
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+	ClearPageHead(page);
+	clear_compound_head(page);
+#endif
+}
+
+struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
+				   unsigned long address)
+{
+	struct page *page;
+	unsigned long paddr;
+
+	if (current->mm->tsp == NULL)
+		return NULL;
+	if (!is_current_tsp_swapped())
+		return NULL;
+
+	paddr = tsp_vaddr_to_paddr(current->mm->tsp, address);
+	if (paddr == 0) {
+#if TSP_DEBUG
+		printk("[%s %d] : alloc_zeroed_tsp_page [%#lx - %#lx], "
+		       "address:%#lx, return NULL\n",
+		       current->comm, current->pid, vma->vm_start, vma->vm_end,
+		       address);
+#endif
+		return NULL;
 	}
+
+	page = pfn_to_page(paddr >> PAGE_SHIFT);
+	prep_new_tsp_page(page);
+	clear_page(__va(paddr));
+#if TSP_DEBUG
+	printk("[%s %d] : alloc_zeroed_tsp_page [%#lx - %#lx], address:%#lx, "
+	       "paddr = %#lx\n",
+	       current->comm, current->pid, vma->vm_start, vma->vm_end, address,
+	       paddr);
+#endif
+	return page;
 }

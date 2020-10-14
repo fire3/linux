@@ -225,7 +225,7 @@ struct tsp {
         unsigned long mmap_segment_size;
         unsigned long stack_segment_paddr;
         unsigned long stack_segment_size;
-	int is_remapped;
+	int is_swapped;
 };
 
 struct tsp * tsp_alloc(unsigned long code_size, unsigned long heap_size,
@@ -234,7 +234,13 @@ void get_tsp(struct tsp *tsp);
 void put_tsp(struct tsp *tsp);
 extern struct file_operations tsp_fops;
 int tsp_swap_current(void);
+int tsp_check_current(void);
 void put_tsp_page(struct page *page);
+int is_current_tsp_swapped(void);
+struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
+				   unsigned long address);
+void dup_tsp_page(struct page *old_page, struct page *tsp_page);
+unsigned long tsp_vaddr_to_paddr(struct tsp *tsp, unsigned long vaddr);
 #endif
 
 
