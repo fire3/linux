@@ -1443,9 +1443,7 @@ static int check_tsp_pte_range(struct mm_struct *mm, pmd_t *pmd,
 	pte_t *pte;
 	int err = 0;
 	struct tsp *tsp = mm->tsp;
-	unsigned long tsp_paddr, pte_paddr;
-	struct page *old_page, *new_page;
-	pgprot_t old_prot;
+	unsigned long pte_paddr;
 
 	if (tsp == NULL)
 		return -EFAULT;
@@ -1650,7 +1648,7 @@ int check_tsp_range(struct vm_area_struct *vma, unsigned long addr,
 	unsigned long next;
 	unsigned long end = addr + PAGE_ALIGN(size);
 	struct mm_struct *mm = vma->vm_mm;
-	int err;
+	int err = 0;
 
 #if TSP_DEBUG
 	printk("TSP CHECK [%lx - %lx] vm_flags %lx, vm_page_prot %lx, "
@@ -1689,7 +1687,7 @@ int swap_tsp_range(struct vm_area_struct *vma, unsigned long addr,
 	unsigned long next;
 	unsigned long end = addr + PAGE_ALIGN(size);
 	struct mm_struct *mm = vma->vm_mm;
-	int err;
+	int err = 0;
 
 #if TSP_DEBUG
 	printk("TSP SWAP [%lx - %lx] vm_flags %lx, vm_page_prot %lx, "
@@ -1731,7 +1729,6 @@ int tsp_check_current(void)
 	struct vm_area_struct *vma;
 	unsigned long start = 0;
 	unsigned long end = 0;
-	unsigned long next = 0;
 	int err = 0;
 
 	if (!is_current_tsp_swapped())
@@ -1758,7 +1755,6 @@ int tsp_swap_current(void)
 	struct vm_area_struct *vma;
 	unsigned long start = 0;
 	unsigned long end = 0;
-	unsigned long next = 0;
 	int err = 0;
 #if TSP_DEBUG
 	printk("tsp_swap_current %s %d\n", current->comm, current->pid);
@@ -1833,6 +1829,7 @@ static int prep_new_tsp_page(struct page *page)
 	ClearPageHead(page);
 	clear_compound_head(page);
 #endif
+	return 0;
 }
 
 struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
@@ -1860,7 +1857,7 @@ struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 	page = pfn_to_page(paddr >> PAGE_SHIFT);
 	prep_new_tsp_page(page);
 	clear_page(__va(paddr));
-#if 1
+#if 0
 	printk("[%s %d] : alloc_zeroed_tsp_page [%#lx - %#lx], address:%#lx, "
 	       "paddr = %#lx\n",
 	       current->comm, current->pid, vma->vm_start, vma->vm_end, address,
