@@ -133,7 +133,7 @@ static inline pte_t ptep_get_and_clear(struct mm_struct *mm,
 }
 #endif
 
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+#if defined(CONFIG_TRANSPARENT_HUGEPAGE) || defined(CONFIG_TRANSPARENT_SEGMENTPAGE)
 #ifndef __HAVE_ARCH_PMDP_HUGE_GET_AND_CLEAR
 static inline pmd_t pmdp_huge_get_and_clear(struct mm_struct *mm,
 					    unsigned long address,
@@ -157,7 +157,7 @@ static inline pud_t pudp_huge_get_and_clear(struct mm_struct *mm,
 #endif /* __HAVE_ARCH_PUDP_HUGE_GET_AND_CLEAR */
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
-#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+#if defined(CONFIG_TRANSPARENT_HUGEPAGE) || defined(CONFIG_TRANSPARENT_SEGMENTPAGE)
 #ifndef __HAVE_ARCH_PMDP_HUGE_GET_AND_CLEAR_FULL
 static inline pmd_t pmdp_huge_get_and_clear_full(struct mm_struct *mm,
 					    unsigned long address, pmd_t *pmdp,
@@ -892,6 +892,12 @@ static inline unsigned long my_zero_pfn(unsigned long addr)
 #endif
 
 #ifdef CONFIG_MMU
+#ifndef CONFIG_TRANSPARENT_SEGMENTPAGE
+static inline int pmd_tsp_huge(pmd_t pmd)
+{
+	return 0;
+}
+#endif /* CONFIG_TRANSPARENT_SEGMENTPAGE */
 
 #ifndef CONFIG_TRANSPARENT_HUGEPAGE
 static inline int pmd_trans_huge(pmd_t pmd)

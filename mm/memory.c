@@ -1188,6 +1188,15 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 				goto next;
 			/* fall through */
 		}
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+		if (pmd_tsp_huge(*pmd)) {
+			if (next - addr != TSP_HPAGE_PMD_SIZE) 
+				split_tsp_huge_pmd(vma, pmd, addr);
+			else if (zap_tsp_huge_pmd(tlb, vma, pmd, addr))
+				goto next;
+			/* fall through */
+		}
+#endif
 		/*
 		 * Here there can be other concurrent MADV_DONTNEED or
 		 * trans huge page faults running, and if the pmd is
@@ -3712,8 +3721,6 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 	/* For file read into TSP page */
 	if (is_current_tsp_swapped()) {
-		//FIXME:
-		printk("alloc_set_pte: %#lx\n",vmf->address);
 		struct page *new_page;
 		unsigned long paddr;
 		paddr = tsp_vaddr_to_paddr(current->mm->tsp, vmf->address);
@@ -4400,6 +4407,15 @@ retry_pud:
 	/* Huge pud page fault raced with pmd_alloc? */
 	if (pud_trans_unstable(vmf.pud))
 		goto retry_pud;
+
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (pmd_none(*vmf.pmd) && is_current_tsp_swapped()) {
+		if (vma_is_anonymous(vmf.vma))
+			ret = do_tsp_huge_pmd_anonymous_page(&vmf);
+		if (!(ret & VM_FAULT_FALLBACK))
+			return ret;
+	}
+#endif
 
 	if (pmd_none(*vmf.pmd) && __transparent_hugepage_enabled(vma)) {
 		ret = create_huge_pmd(&vmf);

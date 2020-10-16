@@ -50,4 +50,13 @@ static inline int tsp_vaddr_is_stack(unsigned long vaddr)
 	return 0;
 }
 
+#define TSP_HPAGE_PMD_ORDER (PMD_SHIFT-PAGE_SHIFT)
+#define TSP_HPAGE_PMD_NR (1<<TSP_HPAGE_PMD_ORDER)
+#define TSP_HPAGE_PMD_SIZE	((1UL) << PMD_SHIFT)
+#define TSP_HPAGE_PMD_MASK	(~(TSP_HPAGE_PMD_SIZE - 1))
+
+#define TSP_HPAGE_PUD_SIZE	((1UL) << PUD_SHIFT)
+#define TSP_HPAGE_PUD_MASK	(~(TSP_HPAGE_PUD_SIZE - 1))
+
+
 #endif /* _ARCH_TSP_H */

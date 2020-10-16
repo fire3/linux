@@ -8,6 +8,7 @@
 #include <linux/types.h>
 #include <linux/numa.h>
 #include <linux/mm.h>
+#include <asm/tsp.h>
 
 extern void __init tsp_reserve(int order);
 
@@ -241,6 +242,23 @@ struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 				   unsigned long address);
 void dup_tsp_page(struct page *old_page, struct page *tsp_page);
 unsigned long tsp_vaddr_to_paddr(struct tsp *tsp, unsigned long vaddr);
+vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf);
+
+int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
+		 pmd_t *pmd, unsigned long addr);
+
+void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
+		unsigned long address);
+
+#define tlb_remove_tsp_pmd_tlb_entry(tlb, pmdp, address)			\
+	do {								\
+		__tlb_adjust_range(tlb, address, TSP_HPAGE_PMD_SIZE);	\
+		tlb->cleared_pmds = 1;					\
+		__tlb_remove_pmd_tlb_entry(tlb, pmdp, address);		\
+	} while (0)
+
+
+
 #endif
 
 
