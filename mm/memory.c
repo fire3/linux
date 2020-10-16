@@ -2668,7 +2668,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 
 	if (is_zero_pfn(pte_pfn(vmf->orig_pte))) {
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		if (is_current_tsp_swapped()) {
+		if (is_vma_tsp_swapped(vma)) {
 			new_page = alloc_zeroed_tsp_page(vma, vmf->address);
 		} else {
 			new_page = alloc_zeroed_user_highpage_movable(vma,
@@ -2682,7 +2682,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 			goto oom;
 	} else {
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		if (is_current_tsp_swapped()) {
+		if (is_vma_tsp_swapped(vma)) {
 			struct page *tmp_page;
 			VM_BUG_ON_VMA(!old_page, vma);
 			VM_BUG_ON_VMA(!PageTsp(old_page), vma);
@@ -3389,7 +3389,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		entry = pte_mkspecial(pfn_pte(my_zero_pfn(vmf->address),
 						vma->vm_page_prot));
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		if (is_current_tsp_swapped()) {
+		if (is_vma_tsp_swapped(vma)) {
                         if (unlikely(anon_vma_prepare(vma)))
                                 goto oom; 
 			page = alloc_zeroed_tsp_page(vma, vmf->address);
@@ -3418,7 +3418,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
 #if CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (is_current_tsp_swapped()) {
+	if (is_vma_tsp_swapped(vma)) {
 		page = alloc_zeroed_tsp_page(vma, vmf->address);
 	} else {
 		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
@@ -3720,7 +3720,7 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 	flush_icache_page(vma, page);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 	/* For file read into TSP page */
-	if (is_current_tsp_swapped()) {
+	if (is_vma_tsp_swapped(vma)) {
 		struct page *new_page;
 		unsigned long paddr;
 		paddr = tsp_vaddr_to_paddr(current->mm->tsp, vmf->address);
@@ -4409,7 +4409,7 @@ retry_pud:
 		goto retry_pud;
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (pmd_none(*vmf.pmd) && is_current_tsp_swapped()) {
+	if (pmd_none(*vmf.pmd) && is_vma_tsp_swapped(vma)) {
 		if (vma_is_anonymous(vmf.vma))
 			ret = do_tsp_huge_pmd_anonymous_page(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))

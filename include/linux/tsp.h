@@ -238,6 +238,7 @@ int tsp_swap_current(void);
 int tsp_check_current(void);
 void put_tsp_page(struct page *page);
 int is_current_tsp_swapped(void);
+int is_vma_tsp_swapped(struct vm_area_struct *vma);
 struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 				   unsigned long address);
 void dup_tsp_page(struct page *old_page, struct page *tsp_page);

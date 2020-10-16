@@ -1710,6 +1710,14 @@ int swap_tsp_range(struct vm_area_struct *vma, unsigned long addr,
 	return err;
 }
 
+int is_vma_tsp_swapped(struct vm_area_struct *vma)
+{
+	if (vma && vma->vm_mm && vma->vm_mm->tsp)
+		return current->mm->tsp->is_swapped;
+	else 
+		return 0;
+}
+
 int is_current_tsp_swapped(void)
 {
 	if (current && current->mm && current->mm->tsp) {
@@ -1835,7 +1843,7 @@ struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 
 	if (current->mm->tsp == NULL)
 		return NULL;
-	if (!is_current_tsp_swapped())
+	if (!is_vma_tsp_swapped(vma))
 		return NULL;
 
 	paddr = tsp_vaddr_to_paddr(current->mm->tsp, address);
@@ -1852,7 +1860,7 @@ struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 	page = pfn_to_page(paddr >> PAGE_SHIFT);
 	prep_new_tsp_page(page);
 	clear_page(__va(paddr));
-#if 0
+#if 1
 	printk("[%s %d] : alloc_zeroed_tsp_page [%#lx - %#lx], address:%#lx, "
 	       "paddr = %#lx\n",
 	       current->comm, current->pid, vma->vm_start, vma->vm_end, address,
