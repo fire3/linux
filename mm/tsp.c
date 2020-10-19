@@ -44,6 +44,7 @@
 #include <uapi/linux/tsp.h>
 #include <linux/huge_mm.h>
 #include <linux/hugetlb.h>
+#include <linux/anon_inodes.h>
 
 #include "internal.h"
 
@@ -1296,6 +1297,10 @@ void tsp_destroy(struct tsp *tsp)
 		tspblock_free(tsp->stack_segment_paddr,
 			      tsp->stack_segment_size);
 
+	printk("TSP FREE CODE:%#lx HEAP:%#lx MMAP:%#lx STACK:%#lx\n",
+	       tsp->code_segment_size, tsp->heap_segment_size,
+	       tsp->mmap_segment_size, tsp->stack_segment_size);
+
 	kfree(tsp);
 }
 
@@ -1339,6 +1344,10 @@ struct tsp *tsp_alloc(unsigned long code_size, unsigned long heap_size,
 	tsp->mm = current->mm;
 	tsp->task = current;
 	atomic_set(&tsp->users_count, 0);
+
+	printk("TSP ALLOC CODE:%#lx HEAP:%#lx MMAP:%#lx STACK:%#lx\n",
+	       tsp->code_segment_size, tsp->heap_segment_size,
+	       tsp->mmap_segment_size, tsp->stack_segment_size);
 
 	return tsp;
 }
@@ -1712,7 +1721,7 @@ int is_vma_tsp_swapped(struct vm_area_struct *vma)
 {
 	if (vma && vma->vm_mm && vma->vm_mm->tsp)
 		return current->mm->tsp->is_swapped;
-	else 
+	else
 		return 0;
 }
 
@@ -1973,7 +1982,7 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 }
 
 pmd_t tsp_pmdp_invalidate(struct vm_area_struct *vma, unsigned long address,
-		      pmd_t *pmdp)
+			  pmd_t *pmdp)
 {
 	pmd_t old = pmdp_establish(vma, address, pmdp, pmd_mknotpresent(*pmdp));
 	flush_tlb_range(vma, address, address + TSP_HPAGE_PMD_SIZE);
@@ -2039,4 +2048,54 @@ void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 
 	spin_unlock(ptl);
 	mmu_notifier_invalidate_range_only_end(&range);
+}
+
+int tsp_alloc_and_create(unsigned long code_size, unsigned long heap_size,
+			 unsigned long mmap_size, unsigned long stack_size)
+{
+	int error, fd;
+	struct file *file = NULL;
+	struct tsp *tsp = NULL;
+
+	tsp = tsp_alloc(code_size, heap_size, mmap_size, stack_size);
+	if (IS_ERR(tsp)) {
+		fd = PTR_ERR(tsp);
+		goto out;
+	}
+
+	error = get_unused_fd_flags(O_RDWR);
+	if (error < 0) {
+		fd = error;
+		goto out;
+	}
+	fd = error;
+
+	file = anon_inode_getfile("tsp", &tsp_fops, tsp, O_RDWR | O_CLOEXEC);
+	if (IS_ERR(file)) {
+		error = PTR_ERR(file);
+		put_unused_fd(fd);
+		fd = error;
+		goto out;
+	}
+	get_tsp(tsp);
+	fd_install(fd, file);
+	current->mm->tsp = tsp;
+out:
+	return fd;
+}
+
+int tsp_setup_current()
+{
+	int fd;
+	if (current->mm && !current->mm->tsp && current->mm->mmap_segment_env &&
+	    current->mm->code_segment_env && current->mm->heap_segment_env &&
+	    current->mm->stack_segment_env) {
+		tsp_alloc_and_create(current->mm->code_segment_env,
+				     current->mm->heap_segment_env,
+				     current->mm->mmap_segment_env,
+				     current->mm->stack_segment_env);
+		tsp_swap_current();
+		printk("TSP setup current end\n");
+	}
+	return 0;
 }

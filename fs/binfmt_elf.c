@@ -335,6 +335,16 @@ create_elf_tables(struct linux_binprm *bprm, const struct elfhdr *exec,
 		len = strnlen_user((void __user *)p, MAX_ARG_STRLEN);
 		if (!len || len > MAX_ARG_STRLEN)
 			return -EINVAL;
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+		if (strncmp((char __user *)p, "TSP_CODE", 8) == 0) 
+			mm->code_segment_env = memparse((char *)(p+9), NULL);
+		if (strncmp((char __user *)p, "TSP_HEAP", 8) == 0)
+			mm->heap_segment_env = memparse((char *)(p+9), NULL);
+		if (strncmp((char __user *)p, "TSP_MMAP", 8) == 0)
+			mm->mmap_segment_env = memparse((char *)(p+9), NULL);
+		if (strncmp((char __user *)p, "TSP_STACK", 9) == 0)
+			mm->stack_segment_env = memparse((char *)(p+10), NULL);
+#endif
 		p += len;
 	}
 	if (__put_user(0, sp++))

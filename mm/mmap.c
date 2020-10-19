@@ -53,6 +53,10 @@
 #include <asm/tlb.h>
 #include <asm/mmu_context.h>
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#include <linux/tsp.h>
+#endif
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/mmap.h>
 
@@ -1596,6 +1600,10 @@ unsigned long ksys_mmap_pgoff(unsigned long addr, unsigned long len,
 out_fput:
 	if (file)
 		fput(file);
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	tsp_setup_current();
+#endif
+
 	return retval;
 }
 

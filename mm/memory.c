@@ -4409,6 +4409,19 @@ retry_pud:
 		goto retry_pud;
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (tsp_vaddr_is_stack(address)) {
+		vma->vm_mm->stack_segment_used++;
+	}
+	if (tsp_vaddr_is_heap(address)) {
+		vma->vm_mm->heap_segment_used++;
+	}
+	if (tsp_vaddr_is_mmap(address)) {
+		vma->vm_mm->mmap_segment_used++;
+	}
+	if (tsp_vaddr_is_code(address)) {
+		vma->vm_mm->code_segment_used++;
+	}
+
 	if (pmd_none(*vmf.pmd) && is_vma_tsp_swapped(vma)) {
 		if (vma_is_anonymous(vmf.vma))
 			ret = do_tsp_huge_pmd_anonymous_page(&vmf);

@@ -535,6 +535,14 @@ struct mm_struct {
 		struct uprobes_state uprobes_state;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 		struct tsp *tsp;
+		unsigned long mmap_segment_env;
+		unsigned long code_segment_env;
+		unsigned long heap_segment_env;
+		unsigned long stack_segment_env;
+		unsigned long mmap_segment_used;
+		unsigned long code_segment_used;
+		unsigned long heap_segment_used;
+		unsigned long stack_segment_used;
 #endif
 #ifdef CONFIG_HUGETLB_PAGE
 		atomic_long_t hugetlb_usage;

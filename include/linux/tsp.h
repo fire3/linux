@@ -251,6 +251,11 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 		unsigned long address);
 
+int tsp_alloc_and_create(unsigned long code_size, unsigned long heap_size,
+		unsigned long mmap_size, unsigned long stack_size);
+
+int tsp_setup_current(void);
+
 #define tlb_remove_tsp_pmd_tlb_entry(tlb, pmdp, address)			\
 	do {								\
 		__tlb_adjust_range(tlb, address, TSP_HPAGE_PMD_SIZE);	\
