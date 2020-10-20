@@ -1825,6 +1825,7 @@ void put_tsp_page(struct page *page)
 	if (put_page_testzero(page))
 		free_tsp_page(page);
 }
+EXPORT_SYMBOL(put_tsp_page);
 
 static int prep_new_tsp_page(struct page *page)
 {
