@@ -1459,29 +1459,50 @@ static int check_tsp_pte_range(struct mm_struct *mm, pmd_t *pmd,
 	pte = pte_offset_map(pmd, addr);
 	arch_enter_lazy_mmu_mode();
 	do {
-		if (!pte_present(*pte))
+		if (!pte_present(*pte) || (pte_none(*pte)) || !(pte_accessible(mm,*pte)))
 			continue;
+		WARN_ON_ONCE(is_zero_pfn(pte_pfn(*pte)));
 		pte_paddr = (pte_pfn(*pte)) << PAGE_SHIFT;
 		if (tsp_vaddr_is_code(addr)) {
 			if (pte_paddr < tsp->code_segment_paddr ||
 			    pte_paddr > (tsp->code_segment_paddr +
-					 tsp->code_segment_size))
+					 tsp->code_segment_size)) {
+				printk("[%s %d] addr %#lx check failed, "
+				       "pte_paddr = %#lx\n",
+				       current->comm, current->pid, addr,
+				       pte_paddr);
 				return -EINVAL;
+			}
 		} else if (tsp_vaddr_is_heap(addr)) {
 			if (pte_paddr < tsp->heap_segment_paddr ||
 			    pte_paddr > (tsp->heap_segment_paddr +
-					 tsp->heap_segment_size))
+					 tsp->heap_segment_size)) {
+				printk("[%s %d] addr %#lx check failed, "
+				       "pte_paddr = %#lx\n",
+				       current->comm, current->pid, addr,
+				       pte_paddr);
 				return -EINVAL;
+			}
 		} else if (tsp_vaddr_is_mmap(addr)) {
 			if (pte_paddr < tsp->mmap_segment_paddr ||
 			    pte_paddr > (tsp->mmap_segment_paddr +
-					 tsp->mmap_segment_size))
+					 tsp->mmap_segment_size)) {
+				printk("[%s %d] addr %#lx check failed, "
+				       "pte_paddr = %#lx\n",
+				       current->comm, current->pid, addr,
+				       pte_paddr);
 				return -EINVAL;
+			}
 		} else if (tsp_vaddr_is_stack(addr)) {
 			if (pte_paddr < tsp->stack_segment_paddr ||
 			    pte_paddr > (tsp->stack_segment_paddr +
-					 tsp->stack_segment_size))
+					 tsp->stack_segment_size)) {
+				printk("[%s %d] addr %#lx check failed, "
+				       "pte_paddr = %#lx\n",
+				       current->comm, current->pid, addr,
+				       pte_paddr);
 				return -EINVAL;
+			}
 		}
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 	arch_leave_lazy_mmu_mode();
@@ -1659,7 +1680,7 @@ int check_tsp_range(struct vm_area_struct *vma, unsigned long addr,
 	struct mm_struct *mm = vma->vm_mm;
 	int err = 0;
 
-#if TSP_DEBUG
+#if 1
 	printk("TSP CHECK [%lx - %lx] vm_flags %lx, vm_page_prot %lx, "
 	       "vm_pgoff: %lx , err = %d\n",
 	       addr, end, vma->vm_flags, vma->vm_page_prot.pgprot,
@@ -1756,6 +1777,9 @@ int tsp_check_current(void)
 		vma = vma->vm_next;
 	}
 	up_read(&current->mm->mmap_sem);
+	if (err)
+		printk("[%s %d] TSP CHECK Failed.\n", current->comm,
+		       current->pid);
 	return err;
 }
 
@@ -1765,7 +1789,7 @@ int tsp_swap_current(void)
 	unsigned long start = 0;
 	unsigned long end = 0;
 	int err = 0;
-#if TSP_DEBUG
+#if 0
 	printk("tsp_swap_current %s %d\n", current->comm, current->pid);
 	printk("code: %#lx - %#lx (%#lx)\n",
 	       current->mm->tsp->code_segment_paddr,
@@ -1855,7 +1879,7 @@ struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 
 	paddr = tsp_vaddr_to_paddr(current->mm->tsp, address);
 	if (paddr == 0) {
-#if 0
+#if 1
 		printk("[%s %d] : alloc_zeroed_tsp_page [%#lx - %#lx], "
 		       "address:%#lx, return NULL\n",
 		       current->comm, current->pid, vma->vm_start, vma->vm_end,
@@ -1897,6 +1921,8 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 	unsigned long haddr = vmf->address & TSP_HPAGE_PMD_MASK;
 	unsigned long paddr;
 	vm_fault_t ret = 0;
+
+	return VM_FAULT_FALLBACK; //For debug
 
 	if (!tsp_pmd_huge_vma_suitable(vma, haddr))
 		return VM_FAULT_FALLBACK;

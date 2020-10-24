@@ -1882,6 +1882,31 @@ static int __do_execve_file(int fd, struct filename *filename,
 	if (retval < 0)
 		goto out;
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	{                                                                       
+		int envc = bprm->envc;
+		char * p =  (char *)current->mm->env_start;
+		char * buf = kmalloc(MAX_ARG_STRLEN, GFP_KERNEL);
+		if (buf) {
+			while (envc-- > 0) {
+				int len, ret;
+				len = strnlen_user((void __user *)p, MAX_ARG_STRLEN);
+				ret = strncpy_from_user(buf,  (char __user *)p, len);
+				if (strncmp(buf, "TSP_CODE", 8) == 0)
+					current->mm->code_segment_env = memparse((char *)(buf+9), NULL);
+				if (strncmp(buf, "TSP_HEAP", 8) == 0)
+					current->mm->heap_segment_env = memparse((char *)(buf+9), NULL);
+				if (strncmp(buf, "TSP_MMAP", 8) == 0)
+					current->mm->mmap_segment_env = memparse((char *)(buf+9), NULL);
+				if (strncmp(buf, "TSP_STACK", 9) == 0)
+					current->mm->stack_segment_env = memparse((char *)(buf+10), NULL);
+				p += len;
+			}
+		}
+		kfree(buf);
+	}
+#endif    
+
 	/* execve succeeded */
 	current->fs->in_exec = 0;
 	current->in_execve = 0;

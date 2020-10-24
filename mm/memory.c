@@ -3714,8 +3714,9 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 	}
 
 	/* Re-check under ptl */
-	if (unlikely(!pte_none(*vmf->pte)))
+	if (unlikely(!pte_none(*vmf->pte))) {
 		return VM_FAULT_NOPAGE;
+	}
 
 	flush_icache_page(vma, page);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
@@ -3737,6 +3738,15 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 		} else {
 			inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
 			page_add_file_rmap(page, false);
+#if 0
+			printk("[%s %d]: mm_counter [MM_FILEPAGES:%ld] [MM_SHMEMPAGES:%ld], address:%#lx, PageSwapBacked:%d\n",
+					current->comm, current->pid, 
+					get_mm_counter(vma->vm_mm, MM_FILEPAGES),
+					get_mm_counter(vma->vm_mm, MM_SHMEMPAGES),
+					vmf->address,
+					PageSwapBacked(page)
+					);
+#endif
 		}
 		dup_tsp_page(page, new_page);
 
@@ -3914,8 +3924,9 @@ static vm_fault_t do_fault_around(struct vm_fault *vmf)
 
 	/* check if the page fault is solved */
 	vmf->pte -= (vmf->address >> PAGE_SHIFT) - (address >> PAGE_SHIFT);
-	if (!pte_none(*vmf->pte))
+	if (!pte_none(*vmf->pte)) {
 		ret = VM_FAULT_NOPAGE;
+	}
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 out:
 	vmf->address = address;
@@ -3947,6 +3958,7 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 	unlock_page(vmf->page);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		put_page(vmf->page);
+
 	return ret;
 }
 
@@ -3969,8 +3981,9 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 	}
 
 	ret = __do_fault(vmf);
-	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
+	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY))) {
 		goto uncharge_out;
+	}
 	if (ret & VM_FAULT_DONE_COW)
 		return ret;
 
@@ -3980,8 +3993,9 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 	ret |= finish_fault(vmf);
 	unlock_page(vmf->page);
 	put_page(vmf->page);
-	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
+	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY))) {
 		goto uncharge_out;
+	}
 	return ret;
 uncharge_out:
 	mem_cgroup_cancel_charge(vmf->cow_page, vmf->memcg, false);
@@ -4364,6 +4378,8 @@ static vm_fault_t __handle_mm_fault(struct vm_area_struct *vma,
 	};
 	unsigned int dirty = flags & FAULT_FLAG_WRITE;
 	struct mm_struct *mm = vma->vm_mm;
+
+
 	pgd_t *pgd;
 	p4d_t *p4d;
 	vm_fault_t ret;
@@ -4421,13 +4437,14 @@ retry_pud:
 	if (tsp_vaddr_is_code(address)) {
 		vma->vm_mm->code_segment_used++;
 	}
-
+#if 0
 	if (pmd_none(*vmf.pmd) && is_vma_tsp_swapped(vma)) {
 		if (vma_is_anonymous(vmf.vma))
 			ret = do_tsp_huge_pmd_anonymous_page(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
 			return ret;
 	}
+#endif
 #endif
 
 	if (pmd_none(*vmf.pmd) && __transparent_hugepage_enabled(vma)) {
@@ -4443,6 +4460,7 @@ retry_pud:
 					  !is_pmd_migration_entry(orig_pmd));
 			if (is_pmd_migration_entry(orig_pmd))
 				pmd_migration_entry_wait(mm, vmf.pmd);
+
 			return 0;
 		}
 		if (pmd_trans_huge(orig_pmd) || pmd_devmap(orig_pmd)) {
