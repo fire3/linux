@@ -1900,6 +1900,10 @@ static int __do_execve_file(int fd, struct filename *filename,
 					current->mm->mmap_segment_env = memparse((char *)(buf+9), NULL);
 				if (strncmp(buf, "TSP_STACK", 9) == 0)
 					current->mm->stack_segment_env = memparse((char *)(buf+10), NULL);
+				if (strncmp(buf, "TSP_CHECK", 9) == 0)
+					current->mm->tsp_check = 1;
+				if (strncmp(buf, "TSP_SHOW", 8) == 0)
+					current->mm->tsp_show_size = 1;
 				p += len;
 			}
 		}

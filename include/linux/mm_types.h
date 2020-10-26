@@ -535,6 +535,8 @@ struct mm_struct {
 		struct uprobes_state uprobes_state;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 		struct tsp *tsp;
+		bool tsp_check;
+		bool tsp_show_size;
 		unsigned long mmap_segment_env;
 		unsigned long code_segment_env;
 		unsigned long heap_segment_env;

@@ -440,16 +440,7 @@ static void exit_mm(void)
 	if (!mm)
 		return;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	tsp_check_current();
-#if 0
-	printk("[%s %d] : code:%#lx KB, heap:%#lx KB, mmap:%#lx KB, stack: %#lx KB\n", current->comm, 
-		current->pid, 
-		(mm->code_segment_used)*(PAGE_SIZE>>10),
-		(mm->heap_segment_used)*(PAGE_SIZE>>10),
-		(mm->mmap_segment_used)*(PAGE_SIZE>>10),
-		(mm->stack_segment_used)*(PAGE_SIZE>>10)
-		);
-#endif
+	tsp_exit_dump();
 #endif
 	sync_mm_rss(mm);
 	/*

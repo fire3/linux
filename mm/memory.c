@@ -1188,7 +1188,7 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 				goto next;
 			/* fall through */
 		}
-#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#if 0
 		if (pmd_tsp_huge(*pmd)) {
 			if (next - addr != TSP_HPAGE_PMD_SIZE) 
 				split_tsp_huge_pmd(vma, pmd, addr);
@@ -2667,7 +2667,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 		goto oom;
 
 	if (is_zero_pfn(pte_pfn(vmf->orig_pte))) {
-#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#if 0
 		if (is_vma_tsp_swapped(vma)) {
 			new_page = alloc_zeroed_tsp_page(vma, vmf->address);
 		} else {
@@ -2681,7 +2681,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 		if (!new_page)
 			goto oom;
 	} else {
-#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#if 0
 		if (is_vma_tsp_swapped(vma)) {
 			struct page *tmp_page;
 			VM_BUG_ON_VMA(!old_page, vma);
@@ -2694,9 +2694,10 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 			new_page = old_page;
 			new_page->tsp_buddy_page = NULL;
 			old_page = tmp_page;
+			
 		} else {
 			new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma,
-					    	  vmf->address);
+					vmf->address);
 			if (!new_page)
 				goto oom;
 			if (!cow_user_page(new_page, old_page, vmf)) {
@@ -3719,7 +3720,7 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 	}
 
 	flush_icache_page(vma, page);
-#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#if 0
 	/* For file read into TSP page */
 	if (is_vma_tsp_swapped(vma)) {
 		struct page *new_page;
@@ -3734,22 +3735,11 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 			inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
 			page_add_new_anon_rmap(page, vma, vmf->address, false);
 			mem_cgroup_commit_charge(page, memcg, false, false);
-			lru_cache_add_active_or_unevictable(page, vma);
 		} else {
 			inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
 			page_add_file_rmap(page, false);
-#if 0
-			printk("[%s %d]: mm_counter [MM_FILEPAGES:%ld] [MM_SHMEMPAGES:%ld], address:%#lx, PageSwapBacked:%d\n",
-					current->comm, current->pid, 
-					get_mm_counter(vma->vm_mm, MM_FILEPAGES),
-					get_mm_counter(vma->vm_mm, MM_SHMEMPAGES),
-					vmf->address,
-					PageSwapBacked(page)
-					);
-#endif
 		}
 		dup_tsp_page(page, new_page);
-
 		set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
         	flush_tlb_page(vma, vmf->address);
 		update_mmu_cache(vma, vmf->address, vmf->pte);
@@ -4528,6 +4518,18 @@ vm_fault_t handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 		if (task_in_memcg_oom(current) && !(ret & VM_FAULT_OOM))
 			mem_cgroup_oom_synchronize(false);
 	}
+
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (is_current_tsp_swapped()) {
+		int nr_pages = READ_ONCE(fault_around_bytes) >> PAGE_SHIFT;
+		unsigned long mask = ~(nr_pages * PAGE_SIZE - 1) & PAGE_MASK;
+		unsigned long start, end;
+
+		start = max(address & mask, vma->vm_start);
+		end = min(start + nr_pages*PAGE_SIZE, vma->vm_end);
+		swap_tsp_range(vma, start, end-start, vma->vm_page_prot);
+	}
+#endif
 
 	return ret;
 }
