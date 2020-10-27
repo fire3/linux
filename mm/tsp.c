@@ -1913,6 +1913,8 @@ void free_tsp_page(struct page *page)
 	page->mapping = NULL;
 	ClearPagePrivate(page);
 	page_mapcount_reset(page);
+	page->flags = page->flags & (~((1UL << NR_PAGEFLAGS) - 1));
+	SetPageTsp(page);
 }
 
 void put_tsp_page(struct page *page)
@@ -1929,6 +1931,7 @@ EXPORT_SYMBOL(put_tsp_page);
 
 static int prep_new_tsp_page(struct page *page)
 {
+	page->flags = page->flags & (~((1UL << NR_PAGEFLAGS) - 1));
 	SetPageTsp(page);
 	set_page_private(page, 0);
 	set_page_refcounted(page);
@@ -2189,7 +2192,6 @@ out:
 
 int tsp_setup_current()
 {
-	int fd;
 	if (current->mm && !current->mm->tsp && current->mm->mmap_segment_env &&
 	    current->mm->code_segment_env && current->mm->heap_segment_env &&
 	    current->mm->stack_segment_env) {

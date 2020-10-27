@@ -2667,13 +2667,14 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 		goto oom;
 
 	if (is_zero_pfn(pte_pfn(vmf->orig_pte))) {
-#if 0
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 		if (is_vma_tsp_swapped(vma)) {
 			new_page = alloc_zeroed_tsp_page(vma, vmf->address);
 		} else {
 			new_page = alloc_zeroed_user_highpage_movable(vma,
 							      vmf->address);
 		}
+
 #else
 		new_page = alloc_zeroed_user_highpage_movable(vma,
 							      vmf->address);
@@ -2681,7 +2682,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 		if (!new_page)
 			goto oom;
 	} else {
-#if 0
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 		if (is_vma_tsp_swapped(vma)) {
 			struct page *tmp_page;
 			VM_BUG_ON_VMA(!old_page, vma);
