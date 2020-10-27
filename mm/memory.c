@@ -1188,7 +1188,7 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 				goto next;
 			/* fall through */
 		}
-#if 0
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 		if (pmd_tsp_huge(*pmd)) {
 			if (next - addr != TSP_HPAGE_PMD_SIZE) 
 				split_tsp_huge_pmd(vma, pmd, addr);
@@ -4428,12 +4428,14 @@ retry_pud:
 	if (tsp_vaddr_is_code(address)) {
 		vma->vm_mm->code_segment_used++;
 	}
-#if 0
+#if 1
 	if (pmd_none(*vmf.pmd) && is_vma_tsp_swapped(vma)) {
-		if (vma_is_anonymous(vmf.vma))
+		if (vma_is_anonymous(vmf.vma)) {
 			ret = do_tsp_huge_pmd_anonymous_page(&vmf);
-		if (!(ret & VM_FAULT_FALLBACK))
-			return ret;
+			if (!(ret & VM_FAULT_FALLBACK)) {
+				return ret;
+			}
+		}
 	}
 #endif
 #endif

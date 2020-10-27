@@ -2004,19 +2004,21 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 	unsigned long paddr;
 	vm_fault_t ret = 0;
 
-	return VM_FAULT_FALLBACK; //For debug
-
-	if (!tsp_pmd_huge_vma_suitable(vma, haddr))
+	if (!tsp_pmd_huge_vma_suitable(vma, haddr)) {
 		return VM_FAULT_FALLBACK;
+	}
 
-	if (unlikely(anon_vma_prepare(vma)))
+	if (unlikely(anon_vma_prepare(vma))) {
 		return VM_FAULT_OOM;
+	}
 
 	gfp = GFP_TRANSHUGE_LIGHT;
 
 	paddr = tsp_vaddr_to_paddr(vma->vm_mm->tsp, haddr);
 	page = pfn_to_page(paddr >> PAGE_SHIFT);
 	prep_new_tsp_page(page);
+
+	//printk("do_tsp_huge_pmd_anonymous_page addr = %#lx, page = %px\n",haddr, page);
 
 	for (i = 0; i < TSP_HPAGE_PMD_NR; i++) {
 		clear_page(__va(paddr + i * PAGE_SIZE));
@@ -2033,13 +2035,12 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		if (likely(vma->vm_flags & VM_WRITE))
 			entry = pmd_mkwrite(pmd_mkdirty(entry));
 
-		page_add_new_anon_rmap(page, vma, haddr, true);
+		//page_add_new_anon_rmap(page, vma, haddr, true);
 		set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, TSP_HPAGE_PMD_NR);
 		mm_inc_nr_ptes(vma->vm_mm);
 		spin_unlock(vmf->ptl);
 	}
-	printk("TSP HUGE PMD: %#lx\n", haddr);
 	return 0;
 unlock_release:
 	spin_unlock(vmf->ptl);
@@ -2069,6 +2070,8 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	spinlock_t *ptl;
 	struct page *page = NULL;
 
+	//printk("zap_tsp_huge_pmd: addr:%#lx\n",addr);
+
 	tlb_change_page_size(tlb, TSP_HPAGE_PMD_SIZE);
 
 	ptl = __pmd_tsp_huge_lock(pmd, vma);
@@ -2078,14 +2081,13 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 		pmdp_huge_get_and_clear_full(tlb->mm, addr, pmd, tlb->fullmm);
 	tlb_remove_tsp_pmd_tlb_entry(tlb, pmd, addr);
 
-	page = pmd_page(orig_pmd);
-	page_remove_rmap(page, true);
-
-	if (PageAnon(page)) {
-		add_mm_counter(tlb->mm, MM_ANONPAGES, -TSP_HPAGE_PMD_NR);
+	if (pmd_present(orig_pmd)) {
+		page = pmd_page(orig_pmd);
+		add_mm_counter(vma->vm_mm, MM_ANONPAGES, -TSP_HPAGE_PMD_NR);
 	}
 	spin_unlock(ptl);
-	tlb_remove_page_size(tlb, page, TSP_HPAGE_PMD_SIZE);
+	if (page)
+		tlb_remove_page_size(tlb, page, TSP_HPAGE_PMD_SIZE);
 	mm_dec_nr_ptes(vma->vm_mm);
 	return 1;
 }
