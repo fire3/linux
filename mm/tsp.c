@@ -1402,6 +1402,7 @@ struct file_operations tsp_fops = {
 void dup_tsp_page(struct page *old_page, struct page *tsp_page)
 {
 	unsigned long flags;
+	tsp_page->flags = tsp_page->flags & (~((1UL << NR_PAGEFLAGS) - 1));
 	flags = (old_page->flags) & ((1UL << NR_PAGEFLAGS) - 1);
 	tsp_page->flags =
 		(tsp_page->flags & (~(1UL << NR_PAGEFLAGS) - 1)) | flags;
@@ -1594,8 +1595,10 @@ static int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 			old_prot = pte_pgprot(*pte);
 			*pte = pfn_pte(tsp_paddr >> PAGE_SHIFT, old_prot);
 			// Avoid copy-on-write for some file page
+#if 0
 			if (!pte_write(*pte))
 				*pte = pte_mkwrite(*pte);
+#endif
 			old_page = pfn_to_page(pte_paddr >> PAGE_SHIFT);
 			new_page = pfn_to_page(tsp_paddr >> PAGE_SHIFT);
 
