@@ -3113,6 +3113,8 @@ void free_unref_page(struct page *page)
 {
 	unsigned long flags;
 	unsigned long pfn = page_to_pfn(page);
+	
+	BUG_ON(PageTsp(page));
 
 	if (!free_unref_page_prepare(page, pfn))
 		return;

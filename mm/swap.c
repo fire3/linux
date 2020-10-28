@@ -470,6 +470,11 @@ void lru_cache_add_active_or_unevictable(struct page *page,
 					 struct vm_area_struct *vma)
 {
 	VM_BUG_ON_PAGE(PageLRU(page), page);
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (unlikely(PageTsp(page)))
+		return;
+#endif
+
 
 	if (likely((vma->vm_flags & (VM_LOCKED | VM_SPECIAL)) != VM_LOCKED))
 		SetPageActive(page);
@@ -803,6 +808,7 @@ void release_pages(struct page **pages, int nr)
 			if (page->tsp_buddy_page == NULL)
 				continue;
 			page = page->tsp_buddy_page;
+			BUG_ON(PageTsp(page));
 		}
 #endif
 		/*
@@ -815,6 +821,9 @@ void release_pages(struct page **pages, int nr)
 			locked_pgdat = NULL;
 		}
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+		BUG_ON(PageTsp(page));
+#endif
 		if (is_huge_zero_page(page))
 			continue;
 
