@@ -1408,6 +1408,7 @@ void dup_tsp_page(struct page *old_page, struct page *tsp_page)
 		(tsp_page->flags & (~(1UL << NR_PAGEFLAGS) - 1)) | flags;
 	SetPageTsp(tsp_page);
 	ClearPageLRU(tsp_page);
+	lock_page(old_page);
 
 	tsp_page->tsp_buddy_page = old_page;
 	tsp_page->mapping = old_page->mapping;
@@ -1417,6 +1418,7 @@ void dup_tsp_page(struct page *old_page, struct page *tsp_page)
 #ifdef CONFIG_MEMCG
 	tsp_page->mem_cgroup = old_page->mem_cgroup;
 #endif
+	unlock_page(old_page);
 #if 0
 	printk("[%s %d],dup_tsp_page:%#lx old flag: %#lx PageTsp:%d PageDirty:%d PageLoced:%d\n",
 					current->comm, current->pid,
@@ -1603,6 +1605,11 @@ static int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 			new_page = pfn_to_page(tsp_paddr >> PAGE_SHIFT);
 
 			dup_tsp_page(old_page, new_page);
+			if (PageAnon(old_page)) {
+				new_page->tsp_buddy_page = NULL;
+				page_remove_rmap(old_page, false);
+				put_page(old_page);
+			}
 		}
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 	arch_leave_lazy_mmu_mode();
@@ -2205,6 +2212,7 @@ int tsp_setup_current()
 				     current->mm->mmap_segment_env,
 				     current->mm->stack_segment_env);
 		tsp_swap_current();
+		printk("[%s %d] TSP enabled\n",current->comm, current->pid);
 	}
 	return 0;
 }
