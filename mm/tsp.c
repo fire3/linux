@@ -53,6 +53,8 @@
 static unsigned long tsp_reserve_size __initdata;
 static bool tsp_reserve_called __initdata;
 
+bool tsp_pmd_huge_vma_suitable(struct vm_area_struct *vma, unsigned long haddr);
+
 static int __init cmdline_parse_tsp_reserve(char *p)
 {
 	tsp_reserve_size = memparse(p, &p);
@@ -1536,8 +1538,8 @@ static int check_tsp_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 	return err;
 }
 
-static int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
-			  unsigned long addr, unsigned long end, pgprot_t prot)
+int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
+		   unsigned long end, pgprot_t prot)
 {
 	pte_t *pte;
 	pte_t *start_pte;
@@ -1554,6 +1556,25 @@ static int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 
 	if (pmd_none(*pmd) || unlikely(pmd_bad(*pmd)))
 		return 0;
+
+	if (pmd_tsp_huge(*pmd)) {
+		return 0;
+	}
+
+	if (vma_is_anonymous(vma)) {
+#if 0
+		unsigned long haddr = addr & TSP_HPAGE_PMD_MASK;
+		if (tsp_pmd_huge_vma_suitable(vma, haddr)) {
+			printk("[%s %d]: swap_pte_range huge suitable "
+			       "addr:%#lx "
+			       "haddr:%#lx, vma[%#lx - %#lx]\n ",
+			       current->comm, current->pid, addr, haddr,
+			       vma->vm_start, vma->vm_end);
+
+			
+		}
+#endif
+	}
 
 	start_pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
 	pte = start_pte;
@@ -1596,7 +1617,7 @@ static int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 				  (void *)__va(pte_paddr));
 			old_prot = pte_pgprot(*pte);
 			*pte = pfn_pte(tsp_paddr >> PAGE_SHIFT, old_prot);
-			// Avoid copy-on-write for some file page
+// Avoid copy-on-write for some file page
 #if 0
 			if (!pte_write(*pte))
 				*pte = pte_mkwrite(*pte);
@@ -1636,9 +1657,8 @@ static inline int check_tsp_pmd_range(struct vm_area_struct *vma, pud_t *pud,
 	return 0;
 }
 
-static inline int swap_pmd_range(struct vm_area_struct *vma, pud_t *pud,
-				 unsigned long addr, unsigned long end,
-				 pgprot_t prot)
+int swap_pmd_range(struct vm_area_struct *vma, pud_t *pud, unsigned long addr,
+		   unsigned long end, pgprot_t prot)
 {
 	pmd_t *pmd;
 	unsigned long next;
@@ -1675,9 +1695,8 @@ static inline int check_tsp_pud_range(struct vm_area_struct *vma, p4d_t *p4d,
 	return 0;
 }
 
-static inline int swap_pud_range(struct vm_area_struct *vma, p4d_t *p4d,
-				 unsigned long addr, unsigned long end,
-				 pgprot_t prot)
+int swap_pud_range(struct vm_area_struct *vma, p4d_t *p4d, unsigned long addr,
+		   unsigned long end, pgprot_t prot)
 {
 	pud_t *pud;
 	unsigned long next;
@@ -1715,9 +1734,8 @@ static inline int check_tsp_p4d_range(struct vm_area_struct *vma, pgd_t *pgd,
 	return 0;
 }
 
-static inline int swap_p4d_range(struct vm_area_struct *vma, pgd_t *pgd,
-				 unsigned long addr, unsigned long end,
-				 pgprot_t prot)
+int swap_p4d_range(struct vm_area_struct *vma, pgd_t *pgd, unsigned long addr,
+		   unsigned long end, pgprot_t prot)
 {
 	p4d_t *p4d;
 	unsigned long next;
@@ -1820,21 +1838,19 @@ int is_current_tsp_swapped(void)
 
 void tsp_exit_dump(void)
 {
-
 	if (current && current->mm && current->mm->tsp_show_size) {
-		printk("[%s %d] : code:%#lx KB, heap:%#lx KB, mmap:%#lx KB, stack: %#lx KB\n", current->comm, 
-				current->pid, 
-				(current->mm->code_segment_used)*(PAGE_SIZE>>10),
-				(current->mm->heap_segment_used)*(PAGE_SIZE>>10),
-				(current->mm->mmap_segment_used)*(PAGE_SIZE>>10),
-				(current->mm->stack_segment_used)*(PAGE_SIZE>>10)
-		      );
+		printk("[%s %d] : code:%#lx KB, heap:%#lx KB, mmap:%#lx KB, "
+		       "stack: %#lx KB\n",
+		       current->comm, current->pid,
+		       (current->mm->code_segment_used) * (PAGE_SIZE >> 10),
+		       (current->mm->heap_segment_used) * (PAGE_SIZE >> 10),
+		       (current->mm->mmap_segment_used) * (PAGE_SIZE >> 10),
+		       (current->mm->stack_segment_used) * (PAGE_SIZE >> 10));
 	}
 
 	if (current && current->mm && current->mm->tsp_check) {
 		tsp_check_current();
 	}
-
 }
 
 int tsp_check_current(void)
@@ -2019,14 +2035,24 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		return VM_FAULT_OOM;
 	}
 
+	if (tsp_vaddr_is_heap(vmf->address)) {
+		vma->vm_mm->heap_segment_used += (TSP_HPAGE_PMD_NR - 1);
+	}
+	if (tsp_vaddr_is_mmap(vmf->address)) {
+		vma->vm_mm->mmap_segment_used += (TSP_HPAGE_PMD_NR - 1);
+	}
+
 	gfp = GFP_TRANSHUGE_LIGHT;
 
 	paddr = tsp_vaddr_to_paddr(vma->vm_mm->tsp, haddr);
 	page = pfn_to_page(paddr >> PAGE_SHIFT);
 	prep_new_tsp_page(page);
 
-	//printk("do_tsp_huge_pmd_anonymous_page addr = %#lx, page = %px\n",haddr, page);
-
+#if 0
+	printk("do_tsp_huge_pmd_anonymous_page [%#lx-%#lx] addr = %#lx, haddr = %#lx\n",
+			vma->vm_start, vma->vm_end,
+			vmf->address, haddr);
+#endif
 	for (i = 0; i < TSP_HPAGE_PMD_NR; i++) {
 		clear_page(__va(paddr + i * PAGE_SIZE));
 	}
@@ -2077,24 +2103,20 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	spinlock_t *ptl;
 	struct page *page = NULL;
 
-	//printk("zap_tsp_huge_pmd: addr:%#lx\n",addr);
-
-	tlb_change_page_size(tlb, TSP_HPAGE_PMD_SIZE);
+	//printk("[%s %d] zap_tsp_huge_pmd: addr:%#lx\n",current->comm, current->pid, addr);
+	//tlb_change_page_size(tlb, TSP_HPAGE_PMD_SIZE);
 
 	ptl = __pmd_tsp_huge_lock(pmd, vma);
 	if (!ptl)
 		return 0;
 	orig_pmd =
 		pmdp_huge_get_and_clear_full(tlb->mm, addr, pmd, tlb->fullmm);
-	tlb_remove_tsp_pmd_tlb_entry(tlb, pmd, addr);
+	//tlb_remove_tsp_pmd_tlb_entry(tlb, pmd, addr);
 
-	if (pmd_present(orig_pmd)) {
-		page = pmd_page(orig_pmd);
-		add_mm_counter(vma->vm_mm, MM_ANONPAGES, -TSP_HPAGE_PMD_NR);
-	}
+	add_mm_counter(vma->vm_mm, MM_ANONPAGES, -TSP_HPAGE_PMD_NR);
 	spin_unlock(ptl);
-	if (page)
-		tlb_remove_page_size(tlb, page, TSP_HPAGE_PMD_SIZE);
+	//if (page)
+	//	tlb_remove_page_size(tlb, page, TSP_HPAGE_PMD_SIZE);
 	mm_dec_nr_ptes(vma->vm_mm);
 	return 1;
 }
@@ -2144,6 +2166,8 @@ void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 	for (i = 0, addr = haddr; i < TSP_HPAGE_PMD_NR;
 	     i++, addr += PAGE_SIZE) {
 		pte_t entry, *pte;
+		prep_new_tsp_page(page + i);
+		page_add_new_anon_rmap(page + i, vma, addr, true);
 		entry = mk_pte(page + i, READ_ONCE(vma->vm_page_prot));
 		entry = maybe_mkwrite(entry, vma);
 		if (!write)
@@ -2212,7 +2236,7 @@ int tsp_setup_current()
 				     current->mm->mmap_segment_env,
 				     current->mm->stack_segment_env);
 		tsp_swap_current();
-		printk("[%s %d] TSP enabled\n",current->comm, current->pid);
+		printk("[%s %d] TSP enabled\n", current->comm, current->pid);
 	}
 	return 0;
 }

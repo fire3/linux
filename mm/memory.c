@@ -1188,10 +1188,11 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 				goto next;
 			/* fall through */
 		}
-#if 0
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 		if (pmd_tsp_huge(*pmd)) {
-			if (next - addr != TSP_HPAGE_PMD_SIZE) 
+			if (next - addr != TSP_HPAGE_PMD_SIZE)  {
 				split_tsp_huge_pmd(vma, pmd, addr);
+			}
 			else if (zap_tsp_huge_pmd(tlb, vma, pmd, addr))
 				goto next;
 			/* fall through */
@@ -4423,7 +4424,7 @@ retry_pud:
 	if (pud_trans_unstable(vmf.pud))
 		goto retry_pud;
 
-#if 0
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 	if (tsp_vaddr_is_stack(address)) {
 		vma->vm_mm->stack_segment_used++;
 	}
