@@ -1558,6 +1558,7 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 		return 0;
 
 	if (pmd_tsp_huge(*pmd)) {
+		printk("swap_pte_range, pmd huge addr:%#lx\n", addr);
 		return 0;
 	}
 
@@ -2048,10 +2049,10 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 	page = pfn_to_page(paddr >> PAGE_SHIFT);
 	prep_new_tsp_page(page);
 
-#if 0
-	printk("do_tsp_huge_pmd_anonymous_page [%#lx-%#lx] addr = %#lx, haddr = %#lx\n",
-			vma->vm_start, vma->vm_end,
-			vmf->address, haddr);
+#if 1
+	printk("do_tsp_huge_pmd_anonymous_page [%#lx-%#lx] addr = %#lx, haddr "
+	       "= %#lx\n",
+	       vma->vm_start, vma->vm_end, vmf->address, haddr);
 #endif
 	for (i = 0; i < TSP_HPAGE_PMD_NR; i++) {
 		clear_page(__va(paddr + i * PAGE_SIZE));
@@ -2101,7 +2102,6 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 {
 	pmd_t orig_pmd;
 	spinlock_t *ptl;
-	struct page *page = NULL;
 
 	//printk("[%s %d] zap_tsp_huge_pmd: addr:%#lx\n",current->comm, current->pid, addr);
 	//tlb_change_page_size(tlb, TSP_HPAGE_PMD_SIZE);
@@ -2237,6 +2237,47 @@ int tsp_setup_current()
 				     current->mm->stack_segment_env);
 		tsp_swap_current();
 		printk("[%s %d] TSP enabled\n", current->comm, current->pid);
+	}
+	return 0;
+}
+
+int copy_one_cow_tsp_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
+			 pte_t *dst_pte, pte_t *src_pte,
+			 struct vm_area_struct *vma, unsigned long addr,
+			 int *rss)
+{
+	struct page *old_page;
+	struct page *new_page;
+	pte_t pte = *src_pte;
+
+	old_page = vm_normal_page(vma, addr, pte);
+	if (old_page && PageTsp(old_page) && old_page->tsp_buddy_page) {
+		// Use the seg buddy page
+		pgprot_t old_prot;
+		old_prot = pte_pgprot(pte);
+		pte = pfn_pte(page_to_pfn(old_page->tsp_buddy_page), old_prot);
+		pte = pte_wrprotect(pte);
+		if (PageAnon(old_page)) {
+			copy_page(page_address(old_page->tsp_buddy_page),
+				  page_address(old_page));
+		}
+		return 0;
+	} else {
+		// Use new page
+		new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
+		if (!new_page)
+			return -ENOMEM;
+		copy_user_highpage(new_page, old_page, addr, vma);
+
+		__SetPageUptodate(new_page);
+
+		pte = mk_pte(new_page, vma->vm_page_prot);
+		pte = maybe_mkwrite(pte_mkdirty(pte), vma);
+
+		page_add_new_anon_rmap(new_page, vma, addr, false);
+		lru_cache_add_active_or_unevictable(new_page, vma);
+		rss[MM_ANONPAGES]++;
+		return 1;
 	}
 	return 0;
 }

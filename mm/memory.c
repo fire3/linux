@@ -780,10 +780,43 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	 * If it's a COW mapping, write protect it both
 	 * in the parent and the child
 	 */
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (!is_current_tsp_swapped()) {
+		ptep_set_wrprotect(src_mm, addr, src_pte);
+		pte = pte_wrprotect(pte);
+	} else {
+		page = vm_normal_page(vma, addr, pte);
+		if (page && PageTsp(page) && page->tsp_buddy_page) {
+			pgprot_t old_prot;
+			old_prot = pte_pgprot(pte);
+			pte = pfn_pte(page_to_pfn(page->tsp_buddy_page), old_prot);
+			pte = pte_wrprotect(pte);
+		} else {
+			struct page *new_page;
+
+			new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
+			if (!new_page)
+				return -ENOMEM;
+			copy_user_highpage(new_page, page, addr, vma);
+
+			__SetPageUptodate(new_page);
+
+			pte = mk_pte(new_page, vma->vm_page_prot);
+			pte = maybe_mkwrite(pte_mkdirty(pte), vma);
+
+			page_add_new_anon_rmap(new_page, vma, addr, false);
+			lru_cache_add_active_or_unevictable(new_page, vma);
+			rss[MM_ANONPAGES]++;
+			goto out_set_pte;
+		}
+
+	}
+#else
 	if (is_cow_mapping(vm_flags) && pte_write(pte)) {
 		ptep_set_wrprotect(src_mm, addr, src_pte);
 		pte = pte_wrprotect(pte);
 	}
+#endif
 
 	/*
 	 * If it's a shared mapping, mark it clean in
