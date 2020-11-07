@@ -1539,7 +1539,7 @@ static int check_tsp_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 }
 
 int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
-		   unsigned long end, pgprot_t prot)
+		   unsigned long end)
 {
 	pte_t *pte;
 	pte_t *start_pte;
@@ -1558,23 +1558,7 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 		return 0;
 
 	if (pmd_tsp_huge(*pmd)) {
-		printk("swap_pte_range, pmd huge addr:%#lx\n", addr);
 		return 0;
-	}
-
-	if (vma_is_anonymous(vma)) {
-#if 0
-		unsigned long haddr = addr & TSP_HPAGE_PMD_MASK;
-		if (tsp_pmd_huge_vma_suitable(vma, haddr)) {
-			printk("[%s %d]: swap_pte_range huge suitable "
-			       "addr:%#lx "
-			       "haddr:%#lx, vma[%#lx - %#lx]\n ",
-			       current->comm, current->pid, addr, haddr,
-			       vma->vm_start, vma->vm_end);
-
-			
-		}
-#endif
 	}
 
 	start_pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
@@ -1659,7 +1643,7 @@ static inline int check_tsp_pmd_range(struct vm_area_struct *vma, pud_t *pud,
 }
 
 int swap_pmd_range(struct vm_area_struct *vma, pud_t *pud, unsigned long addr,
-		   unsigned long end, pgprot_t prot)
+		   unsigned long end)
 {
 	pmd_t *pmd;
 	unsigned long next;
@@ -1671,7 +1655,7 @@ int swap_pmd_range(struct vm_area_struct *vma, pud_t *pud, unsigned long addr,
 	VM_BUG_ON(pmd_trans_huge(*pmd));
 	do {
 		next = pmd_addr_end(addr, end);
-		err = swap_pte_range(vma, pmd, addr, next, prot);
+		err = swap_pte_range(vma, pmd, addr, next);
 		if (err)
 			return err;
 	} while (pmd++, addr = next, addr != end);
@@ -1697,7 +1681,7 @@ static inline int check_tsp_pud_range(struct vm_area_struct *vma, p4d_t *p4d,
 }
 
 int swap_pud_range(struct vm_area_struct *vma, p4d_t *p4d, unsigned long addr,
-		   unsigned long end, pgprot_t prot)
+		   unsigned long end)
 {
 	pud_t *pud;
 	unsigned long next;
@@ -1708,7 +1692,7 @@ int swap_pud_range(struct vm_area_struct *vma, p4d_t *p4d, unsigned long addr,
 		return -ENOMEM;
 	do {
 		next = pud_addr_end(addr, end);
-		err = swap_pmd_range(vma, pud, addr, next, prot);
+		err = swap_pmd_range(vma, pud, addr, next);
 		if (err)
 			return err;
 	} while (pud++, addr = next, addr != end);
@@ -1736,7 +1720,7 @@ static inline int check_tsp_p4d_range(struct vm_area_struct *vma, pgd_t *pgd,
 }
 
 int swap_p4d_range(struct vm_area_struct *vma, pgd_t *pgd, unsigned long addr,
-		   unsigned long end, pgprot_t prot)
+		   unsigned long end)
 {
 	p4d_t *p4d;
 	unsigned long next;
@@ -1747,7 +1731,7 @@ int swap_p4d_range(struct vm_area_struct *vma, pgd_t *pgd, unsigned long addr,
 		return -ENOMEM;
 	do {
 		next = p4d_addr_end(addr, end);
-		err = swap_pud_range(vma, p4d, addr, next, prot);
+		err = swap_pud_range(vma, p4d, addr, next);
 		if (err)
 			return err;
 	} while (p4d++, addr = next, addr != end);
@@ -1793,8 +1777,8 @@ int check_tsp_range(struct vm_area_struct *vma, unsigned long addr,
  *
  * Return: %0 on success, negative error code otherwise.
  */
-int swap_tsp_range(struct vm_area_struct *vma, unsigned long addr,
-		   unsigned long size, pgprot_t prot)
+int swap_tsp_vma_range(struct vm_area_struct *vma, unsigned long addr,
+		   unsigned long size)
 {
 	pgd_t *pgd;
 	unsigned long next;
@@ -1813,7 +1797,7 @@ int swap_tsp_range(struct vm_area_struct *vma, unsigned long addr,
 	flush_cache_range(vma, addr, end);
 	do {
 		next = pgd_addr_end(addr, end);
-		err = swap_p4d_range(vma, pgd, addr, next, prot);
+		err = swap_p4d_range(vma, pgd, addr, next);
 		if (err)
 			break;
 	} while (pgd++, addr = next, addr != end);
@@ -1922,8 +1906,7 @@ int tsp_swap_current(void)
 	while (vma) {
 		start = vma->vm_start;
 		end = vma->vm_end;
-		err = swap_tsp_range(vma, start, end - start,
-				     vma->vm_page_prot);
+		err = swap_tsp_vma_range(vma, start, end - start);
 		if (err)
 			break;
 		vma = vma->vm_next;
@@ -2069,7 +2052,7 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		if (likely(vma->vm_flags & VM_WRITE))
 			entry = pmd_mkwrite(pmd_mkdirty(entry));
 
-		//page_add_new_anon_rmap(page, vma, haddr, true);
+		page_add_new_anon_rmap(page, vma, haddr, true);
 		set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, TSP_HPAGE_PMD_NR);
 		mm_inc_nr_ptes(vma->vm_mm);
@@ -2102,21 +2085,16 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 {
 	pmd_t orig_pmd;
 	spinlock_t *ptl;
-
-	//printk("[%s %d] zap_tsp_huge_pmd: addr:%#lx\n",current->comm, current->pid, addr);
-	//tlb_change_page_size(tlb, TSP_HPAGE_PMD_SIZE);
+	struct page *page = NULL;
 
 	ptl = __pmd_tsp_huge_lock(pmd, vma);
 	if (!ptl)
 		return 0;
 	orig_pmd =
 		pmdp_huge_get_and_clear_full(tlb->mm, addr, pmd, tlb->fullmm);
-	//tlb_remove_tsp_pmd_tlb_entry(tlb, pmd, addr);
 
 	add_mm_counter(vma->vm_mm, MM_ANONPAGES, -TSP_HPAGE_PMD_NR);
 	spin_unlock(ptl);
-	//if (page)
-	//	tlb_remove_page_size(tlb, page, TSP_HPAGE_PMD_SIZE);
 	mm_dec_nr_ptes(vma->vm_mm);
 	return 1;
 }
@@ -2241,43 +2219,3 @@ int tsp_setup_current()
 	return 0;
 }
 
-int copy_one_cow_tsp_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-			 pte_t *dst_pte, pte_t *src_pte,
-			 struct vm_area_struct *vma, unsigned long addr,
-			 int *rss)
-{
-	struct page *old_page;
-	struct page *new_page;
-	pte_t pte = *src_pte;
-
-	old_page = vm_normal_page(vma, addr, pte);
-	if (old_page && PageTsp(old_page) && old_page->tsp_buddy_page) {
-		// Use the seg buddy page
-		pgprot_t old_prot;
-		old_prot = pte_pgprot(pte);
-		pte = pfn_pte(page_to_pfn(old_page->tsp_buddy_page), old_prot);
-		pte = pte_wrprotect(pte);
-		if (PageAnon(old_page)) {
-			copy_page(page_address(old_page->tsp_buddy_page),
-				  page_address(old_page));
-		}
-		return 0;
-	} else {
-		// Use new page
-		new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
-		if (!new_page)
-			return -ENOMEM;
-		copy_user_highpage(new_page, old_page, addr, vma);
-
-		__SetPageUptodate(new_page);
-
-		pte = mk_pte(new_page, vma->vm_page_prot);
-		pte = maybe_mkwrite(pte_mkdirty(pte), vma);
-
-		page_add_new_anon_rmap(new_page, vma, addr, false);
-		lru_cache_add_active_or_unevictable(new_page, vma);
-		rss[MM_ANONPAGES]++;
-		return 1;
-	}
-	return 0;
-}

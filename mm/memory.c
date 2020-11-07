@@ -4570,7 +4570,7 @@ vm_fault_t handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 
 		start = max(address & mask, vma->vm_start);
 		end = min(start + nr_pages*PAGE_SIZE, vma->vm_end);
-		swap_tsp_range(vma, start, end-start, vma->vm_page_prot);
+		swap_tsp_vma_range(vma, start, end-start);
 	}
 #endif
 	return ret;
