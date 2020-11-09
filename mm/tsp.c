@@ -986,7 +986,8 @@ phys_addr_t tspblock_alloc_base_bottom_up(phys_addr_t size, phys_addr_t align,
 	alloc = __tspblock_alloc_base_bottom_up(size, align, max_addr);
 
 	if (alloc == 0)
-		printk("ERROR: Failed to allocate 0x%llx bytes below 0x%llx.\n",
+		printk("TSP ERROR: Failed to allocate 0x%llx bytes below "
+		       "0x%llx.\n",
 		       (unsigned long long)size, (unsigned long long)max_addr);
 
 	return alloc;
@@ -1000,7 +1001,8 @@ phys_addr_t tspblock_alloc_base(phys_addr_t size, phys_addr_t align,
 	alloc = __tspblock_alloc_base(size, align, max_addr);
 
 	if (alloc == 0)
-		printk("ERROR: Failed to allocate 0x%llx bytes below 0x%llx.\n",
+		printk("TSP ERROR: Failed to allocate 0x%llx bytes below "
+		       "0x%llx.\n",
 		       (unsigned long long)size, (unsigned long long)max_addr);
 
 	return alloc;
@@ -1495,9 +1497,9 @@ static int check_tsp_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 		tsp_paddr = tsp_vaddr_to_paddr(tsp, addr);
 		if (tsp_paddr != pte_paddr) {
 			printk("[%s %d] addr %#lx check failed, "
-					"pte_paddr = %#lx, tsp_paddr = %#lx\n",
-					current->comm, current->pid, addr,
-					pte_paddr, tsp_paddr);
+			       "pte_paddr = %#lx, tsp_paddr = %#lx\n",
+			       current->comm, current->pid, addr, pte_paddr,
+			       tsp_paddr);
 			return -EINVAL;
 		}
 	} while (pte++, addr += PAGE_SIZE, addr != end);
@@ -1518,6 +1520,10 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 	struct mm_struct *mm = vma->vm_mm;
 	struct tsp *tsp = vma->vm_mm->tsp;
 
+#if 0
+	printk("SWAP_PTE_RANGE: [%#lx - %#lx] addr %#lx end %#lx pmd:%#lx\n",
+			vma->vm_start, vma->vm_end, addr, end, (unsigned long)(pmd));
+#endif
 	if (tsp == NULL)
 		return -ENOMEM;
 
@@ -1534,6 +1540,11 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 	do {
 		pte_t ptent = *pte;
 
+#if 0
+		printk("SWAP PTE vma:[%#lx-%#lx] (addr:%#lx "
+		       "pte:%#lx)\n",
+		       vma->vm_start, vma->vm_end, addr, pte_val(ptent));
+#endif
 		if (pte_none(ptent))
 			continue;
 		if (pte_present(ptent)) {
@@ -1553,15 +1564,7 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 #endif
 			pte_paddr = (pte_pfn(*pte)) << PAGE_SHIFT;
 			tsp_paddr = tsp_vaddr_to_paddr(tsp, addr);
-#if 0
-			printk("SWAP PTE(%#lx): addr:%#lx page: %#lx (%#lx), "
-			       "tsp_page: %#lx "
-			       "(%#lx)\n",
-			       pte_val(*pte), addr,
-			       (unsigned long)page_address(old_page), pte_paddr,
-			       (unsigned long)page_address(new_page),
-			       tsp_paddr);
-#endif
+
 			if (tsp_paddr == 0)
 				continue;
 
@@ -1578,6 +1581,13 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 			new_page = pfn_to_page(tsp_paddr >> PAGE_SHIFT);
 
 			dup_tsp_page(old_page, new_page);
+#if 0
+			printk("SWAP PTE(%#lx): addr:%#lx pte_paddr: %#lx "
+			       "tsp_paddr: %#lx "
+			       "\n",
+			       pte_val(*pte), addr, pte_paddr, tsp_paddr);
+#endif
+
 			if (PageAnon(old_page)) {
 				new_page->tsp_buddy_page = NULL;
 				page_remove_rmap(old_page, false);
@@ -1659,6 +1669,8 @@ int swap_pud_range(struct vm_area_struct *vma, p4d_t *p4d, unsigned long addr,
 		return -ENOMEM;
 	do {
 		next = pud_addr_end(addr, end);
+		if (pud_none_or_clear_bad(pud))
+			continue;
 		err = swap_pmd_range(vma, pud, addr, next);
 		if (err)
 			return err;
@@ -1725,6 +1737,8 @@ int check_tsp_range(struct vm_area_struct *vma, unsigned long addr,
 	flush_cache_range(vma, addr, end);
 	do {
 		next = pgd_addr_end(addr, end);
+		if (pgd_none_or_clear_bad(pgd))
+			continue;
 		err = check_tsp_p4d_range(vma, pgd, addr, next, prot);
 		if (err)
 			break;
@@ -1745,7 +1759,7 @@ int check_tsp_range(struct vm_area_struct *vma, unsigned long addr,
  * Return: %0 on success, negative error code otherwise.
  */
 int swap_tsp_vma_range(struct vm_area_struct *vma, unsigned long addr,
-		   unsigned long size)
+		       unsigned long size)
 {
 	pgd_t *pgd;
 	unsigned long next;
@@ -2025,7 +2039,6 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 	       "= %#lx, paddr: %#lx entry: %#lx\n",
 	       vma->vm_start, vma->vm_end, vmf->address, haddr, paddr, pmd_val(entry));
 #endif
-
 	}
 	return 0;
 unlock_release:
@@ -2076,8 +2089,8 @@ pmd_t tsp_pmdp_invalidate(struct vm_area_struct *vma, unsigned long address,
 }
 
 bool move_tsp_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
-		  unsigned long new_addr, unsigned long old_end,
-		  pmd_t *old_pmd, pmd_t *new_pmd)
+		       unsigned long new_addr, unsigned long old_end,
+		       pmd_t *old_pmd, pmd_t *new_pmd)
 {
 	spinlock_t *old_ptl, *new_ptl;
 	pmd_t pmd;
@@ -2119,12 +2132,13 @@ bool move_tsp_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 		VM_BUG_ON(!pmd_none(*new_pmd));
 
 		old_prot = pmd_pgprot(pmd);
-	       	pfn = pmd_pfn(pmd);
+		pfn = pmd_pfn(pmd);
 		pmd = pfn_pmd(tsp_pfn, old_prot);
 
 		tsp_pfn = tsp_vaddr_to_paddr(mm->tsp, new_addr) >> PAGE_SHIFT;
 		while (c--) {
-			copy_page(__va(tsp_pfn << PAGE_SHIFT),__va(pfn<<PAGE_SHIFT));
+			copy_page(__va(tsp_pfn << PAGE_SHIFT),
+				  __va(pfn << PAGE_SHIFT));
 			old_page = pfn_to_page(pfn);
 			tsp_page = pfn_to_page(tsp_pfn);
 			dup_tsp_page(old_page, tsp_page);
@@ -2142,7 +2156,6 @@ bool move_tsp_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 	}
 	return false;
 }
-
 
 void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 			unsigned long address)
@@ -2217,6 +2230,7 @@ int tsp_alloc_and_create(unsigned long code_size, unsigned long heap_size,
 	tsp = tsp_alloc(code_size, heap_size, mmap_size, stack_size);
 	if (IS_ERR(tsp)) {
 		fd = PTR_ERR(tsp);
+		printk("TSP alloc failed..\n");
 		goto out;
 	}
 
@@ -2255,4 +2269,3 @@ int tsp_setup_current()
 	}
 	return 0;
 }
-
