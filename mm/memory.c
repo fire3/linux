@@ -3852,7 +3852,11 @@ vm_fault_t finish_fault(struct vm_fault *vmf)
 }
 
 static unsigned long fault_around_bytes __read_mostly =
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	PAGE_SIZE;
+#else
 	rounddown_pow_of_two(65536);
+#endif
 
 #ifdef CONFIG_DEBUG_FS
 static int fault_around_bytes_get(void *data, u64 *val)
@@ -4470,6 +4474,7 @@ retry_pud:
 	if (tsp_vaddr_is_code(address)) {
 		vma->vm_mm->code_segment_used++;
 	}
+#if 1
 	if (pmd_none(*vmf.pmd) && is_vma_tsp_swapped(vma)) {
 		if (vma_is_anonymous(vmf.vma)) {
 			ret = do_tsp_huge_pmd_anonymous_page(&vmf);
@@ -4478,6 +4483,7 @@ retry_pud:
 			}
 		}
 	}
+#endif
 #endif
 
 	if (pmd_none(*vmf.pmd) && __transparent_hugepage_enabled(vma)) {
@@ -4564,13 +4570,16 @@ vm_fault_t handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 	if (is_current_tsp_swapped()) {
+#if 0
 		int nr_pages = READ_ONCE(fault_around_bytes) >> PAGE_SHIFT;
 		unsigned long mask = ~(nr_pages * PAGE_SIZE - 1) & PAGE_MASK;
 		unsigned long start, end;
 
 		start = max(address & mask, vma->vm_start);
 		end = min(start + nr_pages*PAGE_SIZE, vma->vm_end);
-		swap_tsp_vma_range(vma, start, end-start);
+#endif
+		swap_tsp_vma_range(vma, address & PAGE_MASK, PAGE_SIZE);
+		//check_tsp_range(vma,address & PAGE_MASK, PAGE_SIZE, vma->vm_page_prot);
 	}
 #endif
 	return ret;

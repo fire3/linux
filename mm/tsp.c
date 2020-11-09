@@ -1476,7 +1476,7 @@ static int check_tsp_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 	pte_t *pte;
 	int err = 0;
 	struct tsp *tsp = vma->vm_mm->tsp;
-	unsigned long pte_paddr;
+	unsigned long pte_paddr, tsp_paddr;
 
 	if (tsp == NULL)
 		return -EFAULT;
@@ -1492,46 +1492,13 @@ static int check_tsp_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
 			continue;
 		WARN_ON_ONCE(is_zero_pfn(pte_pfn(*pte)));
 		pte_paddr = (pte_pfn(*pte)) << PAGE_SHIFT;
-		if (tsp_vaddr_is_code(addr)) {
-			if (pte_paddr < tsp->code_segment_paddr ||
-			    pte_paddr > (tsp->code_segment_paddr +
-					 tsp->code_segment_size)) {
-				printk("[%s %d] addr %#lx check failed, "
-				       "pte_paddr = %#lx\n",
-				       current->comm, current->pid, addr,
-				       pte_paddr);
-				return -EINVAL;
-			}
-		} else if (tsp_vaddr_is_heap(addr)) {
-			if (pte_paddr < tsp->heap_segment_paddr ||
-			    pte_paddr > (tsp->heap_segment_paddr +
-					 tsp->heap_segment_size)) {
-				printk("[%s %d] addr %#lx check failed, "
-				       "pte_paddr = %#lx\n",
-				       current->comm, current->pid, addr,
-				       pte_paddr);
-				return -EINVAL;
-			}
-		} else if (tsp_vaddr_is_mmap(addr)) {
-			if (pte_paddr < tsp->mmap_segment_paddr ||
-			    pte_paddr > (tsp->mmap_segment_paddr +
-					 tsp->mmap_segment_size)) {
-				printk("[%s %d] addr %#lx check failed, "
-				       "pte_paddr = %#lx\n",
-				       current->comm, current->pid, addr,
-				       pte_paddr);
-				return -EINVAL;
-			}
-		} else if (tsp_vaddr_is_stack(addr)) {
-			if (pte_paddr < tsp->stack_segment_paddr ||
-			    pte_paddr > (tsp->stack_segment_paddr +
-					 tsp->stack_segment_size)) {
-				printk("[%s %d] addr %#lx check failed, "
-				       "pte_paddr = %#lx\n",
-				       current->comm, current->pid, addr,
-				       pte_paddr);
-				return -EINVAL;
-			}
+		tsp_paddr = tsp_vaddr_to_paddr(tsp, addr);
+		if (tsp_paddr != pte_paddr) {
+			printk("[%s %d] addr %#lx check failed, "
+					"pte_paddr = %#lx, tsp_paddr = %#lx\n",
+					current->comm, current->pid, addr,
+					pte_paddr, tsp_paddr);
+			return -EINVAL;
 		}
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 	arch_leave_lazy_mmu_mode();
@@ -1981,6 +1948,7 @@ struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 	prep_new_tsp_page(page);
 	clear_page(__va(paddr));
 #if 0
+  	if (address >= 0x400002400000 && address <= 0x400002500000)
 	printk("[%s %d] : alloc_zeroed_tsp_page [%#lx - %#lx], address:%#lx, "
 	       "paddr = %#lx\n",
 	       current->comm, current->pid, vma->vm_start, vma->vm_end, address,
@@ -2032,11 +2000,6 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 	page = pfn_to_page(paddr >> PAGE_SHIFT);
 	prep_new_tsp_page(page);
 
-#if 1
-	printk("do_tsp_huge_pmd_anonymous_page [%#lx-%#lx] addr = %#lx, haddr "
-	       "= %#lx\n",
-	       vma->vm_start, vma->vm_end, vmf->address, haddr);
-#endif
 	for (i = 0; i < TSP_HPAGE_PMD_NR; i++) {
 		clear_page(__va(paddr + i * PAGE_SIZE));
 	}
@@ -2057,6 +2020,12 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, TSP_HPAGE_PMD_NR);
 		mm_inc_nr_ptes(vma->vm_mm);
 		spin_unlock(vmf->ptl);
+#if 0
+	printk("do_tsp_huge_pmd_anonymous_page [%#lx-%#lx] addr = %#lx, haddr "
+	       "= %#lx, paddr: %#lx entry: %#lx\n",
+	       vma->vm_start, vma->vm_end, vmf->address, haddr, paddr, pmd_val(entry));
+#endif
+
 	}
 	return 0;
 unlock_release:
@@ -2085,7 +2054,6 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 {
 	pmd_t orig_pmd;
 	spinlock_t *ptl;
-	struct page *page = NULL;
 
 	ptl = __pmd_tsp_huge_lock(pmd, vma);
 	if (!ptl)
@@ -2106,6 +2074,75 @@ pmd_t tsp_pmdp_invalidate(struct vm_area_struct *vma, unsigned long address,
 	flush_tlb_range(vma, address, address + TSP_HPAGE_PMD_SIZE);
 	return old;
 }
+
+bool move_tsp_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
+		  unsigned long new_addr, unsigned long old_end,
+		  pmd_t *old_pmd, pmd_t *new_pmd)
+{
+	spinlock_t *old_ptl, *new_ptl;
+	pmd_t pmd;
+	struct mm_struct *mm = vma->vm_mm;
+	bool force_flush = false;
+
+	if ((old_addr & ~TSP_HPAGE_PMD_MASK) ||
+	    (new_addr & ~TSP_HPAGE_PMD_MASK) ||
+	    old_end - old_addr < TSP_HPAGE_PMD_SIZE)
+		return false;
+
+	/*
+	 * The destination pmd shouldn't be established, free_pgtables()
+	 * should have release it.
+	 */
+	if (WARN_ON(!pmd_none(*new_pmd))) {
+		VM_BUG_ON(pmd_tsp_huge(*new_pmd));
+		return false;
+	}
+
+	/*
+	 * We don't have to worry about the ordering of src and dst
+	 * ptlocks because exclusive mmap_sem prevents deadlock.
+	 */
+	old_ptl = __pmd_tsp_huge_lock(old_pmd, vma);
+	if (old_ptl) {
+		unsigned long pfn;
+		unsigned long tsp_pfn;
+		struct page *old_page, *tsp_page;
+		int c = TSP_HPAGE_PMD_NR;
+		pgprot_t old_prot;
+
+		new_ptl = pmd_lockptr(mm, new_pmd);
+		if (new_ptl != old_ptl)
+			spin_lock_nested(new_ptl, SINGLE_DEPTH_NESTING);
+		pmd = pmdp_huge_get_and_clear(mm, old_addr, old_pmd);
+		if (pmd_present(pmd))
+			force_flush = true;
+		VM_BUG_ON(!pmd_none(*new_pmd));
+
+		old_prot = pmd_pgprot(pmd);
+	       	pfn = pmd_pfn(pmd);
+		pmd = pfn_pmd(tsp_pfn, old_prot);
+
+		tsp_pfn = tsp_vaddr_to_paddr(mm->tsp, new_addr) >> PAGE_SHIFT;
+		while (c--) {
+			copy_page(__va(tsp_pfn << PAGE_SHIFT),__va(pfn<<PAGE_SHIFT));
+			old_page = pfn_to_page(pfn);
+			tsp_page = pfn_to_page(tsp_pfn);
+			dup_tsp_page(old_page, tsp_page);
+			pfn++;
+			tsp_pfn++;
+		}
+
+		set_pmd_at(mm, new_addr, new_pmd, pmd);
+		if (force_flush)
+			flush_tlb_range(vma, old_addr, old_addr + PMD_SIZE);
+		if (new_ptl != old_ptl)
+			spin_unlock(new_ptl);
+		spin_unlock(old_ptl);
+		return true;
+	}
+	return false;
+}
+
 
 void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 			unsigned long address)

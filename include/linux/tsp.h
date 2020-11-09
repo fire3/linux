@@ -258,6 +258,14 @@ int tsp_setup_current(void);
 void tsp_exit_dump(void);
 int swap_tsp_vma_range(struct vm_area_struct *vma, unsigned long addr,
 		   unsigned long size);
+
+int check_tsp_range(struct vm_area_struct *vma, unsigned long addr,
+		    unsigned long size, pgprot_t prot);
+
+bool move_tsp_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
+		  unsigned long new_addr, unsigned long old_end,
+		  pmd_t *old_pmd, pmd_t *new_pmd);
+
 #define tlb_remove_tsp_pmd_tlb_entry(tlb, pmdp, address)			\
 	do {								\
 		__tlb_adjust_range(tlb, address, TSP_HPAGE_PMD_SIZE);	\

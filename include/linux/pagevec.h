@@ -78,6 +78,10 @@ static inline unsigned pagevec_space(struct pagevec *pvec)
  */
 static inline unsigned pagevec_add(struct pagevec *pvec, struct page *page)
 {
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (unlikely(PageTsp(page)))
+		return pagevec_space(pvec);
+#endif
 	pvec->pages[pvec->nr++] = page;
 	return pagevec_space(pvec);
 }
