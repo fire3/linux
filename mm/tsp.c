@@ -1403,6 +1403,91 @@ struct file_operations tsp_fops = {
 	.llseek = noop_llseek,
 };
 
+static inline void process_huge_page(
+	unsigned long addr_hint, unsigned int pages_per_huge_page,
+	void (*process_subpage)(unsigned long addr, int idx, void *arg),
+	void *arg)
+{
+	int i, n, base, l;
+	unsigned long addr = addr_hint &
+		~(((unsigned long)pages_per_huge_page << PAGE_SHIFT) - 1);
+
+	/* Process target subpage last to keep its cache lines hot */
+	might_sleep();
+	n = (addr_hint - addr) / PAGE_SIZE;
+	if (2 * n <= pages_per_huge_page) {
+		/* If target subpage in first half of huge page */
+		base = 0;
+		l = n;
+		/* Process subpages at the end of huge page */
+		for (i = pages_per_huge_page - 1; i >= 2 * n; i--) {
+			cond_resched();
+			process_subpage(addr + i * PAGE_SIZE, i, arg);
+		}
+	} else {
+		/* If target subpage in second half of huge page */
+		base = pages_per_huge_page - 2 * (pages_per_huge_page - n);
+		l = pages_per_huge_page - n;
+		/* Process subpages at the begin of huge page */
+		for (i = 0; i < base; i++) {
+			cond_resched();
+			process_subpage(addr + i * PAGE_SIZE, i, arg);
+		}
+	}
+	/*
+	 * Process remaining subpages in left-right-left-right pattern
+	 * towards the target subpage
+	 */
+	for (i = 0; i < l; i++) {
+		int left_idx = base + i;
+		int right_idx = base + 2 * l - 1 - i;
+
+		cond_resched();
+		process_subpage(addr + left_idx * PAGE_SIZE, left_idx, arg);
+		cond_resched();
+		process_subpage(addr + right_idx * PAGE_SIZE, right_idx, arg);
+	}
+}
+
+static void clear_gigantic_page(struct page *page,
+				unsigned long addr,
+				unsigned int pages_per_huge_page)
+{
+	int i;
+	struct page *p = page;
+
+	might_sleep();
+	for (i = 0; i < pages_per_huge_page;
+	     i++, p = mem_map_next(p, page, i)) {
+		cond_resched();
+		clear_user_highpage(p, addr + i * PAGE_SIZE);
+	}
+}
+
+static void clear_subpage(unsigned long addr, int idx, void *arg)
+{
+	struct page *page = arg;
+
+	clear_user_highpage(page + idx, addr);
+}
+
+void tsp_clear_huge_page(struct page *page,
+		     unsigned long addr_hint, unsigned int pages_per_huge_page)
+{
+	unsigned long addr = addr_hint &
+		~(((unsigned long)pages_per_huge_page << PAGE_SHIFT) - 1);
+
+	if (unlikely(pages_per_huge_page > MAX_ORDER_NR_PAGES)) {
+		clear_gigantic_page(page, addr, pages_per_huge_page);
+		return;
+	}
+
+	process_huge_page(addr_hint, pages_per_huge_page, clear_subpage, page);
+}
+
+
+
+
 void dup_tsp_page(struct page *old_page, struct page *tsp_page)
 {
 	unsigned long flags;
@@ -1983,9 +2068,16 @@ bool tsp_pud_huge_vma_suitable(struct vm_area_struct *vma, unsigned long haddr)
 		return false;
 	return true;
 }
+pmd_t tsp_maybe_pmd_mkwrite(pmd_t pmd, struct vm_area_struct *vma)
+{
+	if (likely(vma->vm_flags & VM_WRITE))
+		pmd = pmd_mkwrite(pmd);
+	return pmd;
+}
+
+#define mk_huge_pmd(page, prot) pmd_mkhuge(mk_pmd(page, prot))
 vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 {
-	int i;
 	struct vm_area_struct *vma = vmf->vma;
 	gfp_t gfp;
 	struct page *page;
@@ -2011,12 +2103,15 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 	gfp = GFP_TRANSHUGE_LIGHT;
 
 	paddr = tsp_vaddr_to_paddr(vma->vm_mm->tsp, haddr);
+	if (paddr == 0)
+		return VM_FAULT_OOM;
+
 	page = pfn_to_page(paddr >> PAGE_SHIFT);
 	prep_new_tsp_page(page);
 
-	for (i = 0; i < TSP_HPAGE_PMD_NR; i++) {
-		clear_page(__va(paddr + i * PAGE_SIZE));
-	}
+	clear_huge_page(page, vmf->address, TSP_HPAGE_PMD_NR);
+	__SetPageUptodate(page);
+
 	vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
 	if (unlikely(!pmd_none(*vmf->pmd))) {
 		goto unlock_release;
@@ -2025,10 +2120,14 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		ret = check_stable_address_space(vma->vm_mm);
 		if (ret)
 			goto unlock_release;
+		entry = mk_huge_pmd(page, vma->vm_page_prot);
+		entry = tsp_maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
+
+#if 0
 		entry = pmd_mkhuge(mk_pmd(page, vma->vm_page_prot));
 		if (likely(vma->vm_flags & VM_WRITE))
 			entry = pmd_mkwrite(pmd_mkdirty(entry));
-
+#endif
 		page_add_new_anon_rmap(page, vma, haddr, true);
 		set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, TSP_HPAGE_PMD_NR);
@@ -2062,21 +2161,37 @@ spinlock_t *__pmd_tsp_huge_lock(pmd_t *pmd, struct vm_area_struct *vma)
 	return NULL;
 }
 
+#define tsp_tlb_remove_pmd_tlb_entry(tlb, pmdp, address)			\
+	do {								\
+		__tlb_adjust_range(tlb, address, TSP_HPAGE_PMD_SIZE);	\
+		tlb->cleared_pmds = 1;					\
+		__tlb_remove_pmd_tlb_entry(tlb, pmdp, address);		\
+	} while (0)
+
+
 int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 		     pmd_t *pmd, unsigned long addr)
 {
 	pmd_t orig_pmd;
 	spinlock_t *ptl;
+	struct page *page = NULL;
 
 	ptl = __pmd_tsp_huge_lock(pmd, vma);
 	if (!ptl)
 		return 0;
 	orig_pmd =
 		pmdp_huge_get_and_clear_full(tlb->mm, addr, pmd, tlb->fullmm);
+	tsp_tlb_remove_pmd_tlb_entry(tlb, pmd, addr);
 
+	if (pmd_present(orig_pmd)) {
+		page = pmd_page(orig_pmd);
+		page_remove_rmap(page, true);
+		VM_BUG_ON_PAGE(page_mapcount(page) < 0, page);
+	}
 	add_mm_counter(vma->vm_mm, MM_ANONPAGES, -TSP_HPAGE_PMD_NR);
 	spin_unlock(ptl);
 	mm_dec_nr_ptes(vma->vm_mm);
+	tlb_remove_page_size(tlb, page, TSP_HPAGE_PMD_SIZE);
 	return 1;
 }
 
