@@ -4430,6 +4430,16 @@ static vm_fault_t __handle_mm_fault(struct vm_area_struct *vma,
 	if (!vmf.pud)
 		return VM_FAULT_OOM;
 retry_pud:
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (pud_none(*vmf.pud) && is_current_tsp_swapped()) {
+		if (vma_is_anonymous(vmf.vma)) {
+			ret = do_tsp_huge_pud_anonymous_page(&vmf);
+			if (!(ret & VM_FAULT_FALLBACK)) {
+				return ret;
+			}
+		}
+	}
+#endif
 	if (pud_none(*vmf.pud) && __transparent_hugepage_enabled(vma)) {
 		ret = create_huge_pud(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))

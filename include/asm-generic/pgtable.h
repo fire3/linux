@@ -897,6 +897,10 @@ static inline int pmd_tsp_huge(pmd_t pmd)
 {
 	return 0;
 }
+static inline int pud_tsp_huge(pud_t pud)
+{
+	return 0;
+}
 #endif /* CONFIG_TRANSPARENT_SEGMENTPAGE */
 
 #ifndef CONFIG_TRANSPARENT_HUGEPAGE

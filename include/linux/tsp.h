@@ -244,6 +244,7 @@ struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 void dup_tsp_page(struct page *old_page, struct page *tsp_page);
 unsigned long tsp_vaddr_to_paddr(struct tsp *tsp, unsigned long vaddr);
 vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf);
+vm_fault_t do_tsp_huge_pud_anonymous_page(struct vm_fault *vmf);
 
 int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 		 pmd_t *pmd, unsigned long addr);

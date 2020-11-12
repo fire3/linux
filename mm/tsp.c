@@ -1605,7 +1605,7 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 	struct mm_struct *mm = vma->vm_mm;
 	struct tsp *tsp = vma->vm_mm->tsp;
 
-#if 0
+#if 1
 	printk("SWAP_PTE_RANGE: [%#lx - %#lx] addr %#lx end %#lx pmd:%#lx\n",
 			vma->vm_start, vma->vm_end, addr, end, (unsigned long)(pmd));
 #endif
@@ -2046,8 +2046,7 @@ struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 	page = pfn_to_page(paddr >> PAGE_SHIFT);
 	prep_new_tsp_page(page);
 	clear_page(__va(paddr));
-#if 0
-  	if (address >= 0x400002400000 && address <= 0x400002500000)
+#if 1
 	printk("[%s %d] : alloc_zeroed_tsp_page [%#lx - %#lx], address:%#lx, "
 	       "paddr = %#lx\n",
 	       current->comm, current->pid, vma->vm_start, vma->vm_end, address,
@@ -2073,6 +2072,81 @@ pmd_t tsp_maybe_pmd_mkwrite(pmd_t pmd, struct vm_area_struct *vma)
 	if (likely(vma->vm_flags & VM_WRITE))
 		pmd = pmd_mkwrite(pmd);
 	return pmd;
+}
+pud_t tsp_maybe_pud_mkwrite(pud_t pud, struct vm_area_struct *vma)
+{
+	if (likely(vma->vm_flags & VM_WRITE))
+		pud = pud_mkwrite(pud);
+	return pud;
+}
+
+#define mk_pud(page, pgprot)   pfn_pud(page_to_pfn(page), (pgprot))
+#define mk_huge_pud(page, prot) pud_mkhuge(mk_pud(page, prot))
+vm_fault_t do_tsp_huge_pud_anonymous_page(struct vm_fault *vmf)
+{
+	struct vm_area_struct *vma = vmf->vma;
+	gfp_t gfp;
+	struct page *page;
+	unsigned long haddr = vmf->address & TSP_HPAGE_PUD_MASK;
+	unsigned long paddr;
+	vm_fault_t ret = 0;
+
+	if (!tsp_pmd_huge_vma_suitable(vma, haddr)) {
+		return VM_FAULT_FALLBACK;
+	}
+
+	if (unlikely(anon_vma_prepare(vma))) {
+		return VM_FAULT_OOM;
+	}
+
+	if (tsp_vaddr_is_heap(vmf->address)) {
+		vma->vm_mm->heap_segment_used += (TSP_HPAGE_PUD_NR - 1);
+	}
+	if (tsp_vaddr_is_mmap(vmf->address)) {
+		vma->vm_mm->mmap_segment_used += (TSP_HPAGE_PUD_NR - 1);
+	}
+
+	gfp = GFP_TRANSHUGE_LIGHT;
+
+	paddr = tsp_vaddr_to_paddr(vma->vm_mm->tsp, haddr);
+	if (paddr == 0)
+		return VM_FAULT_OOM;
+
+	page = pfn_to_page(paddr >> PAGE_SHIFT);
+	prep_new_tsp_page(page);
+
+	clear_huge_page(page, vmf->address, TSP_HPAGE_PUD_NR);
+	__SetPageUptodate(page);
+
+	vmf->ptl = pud_lock(vma->vm_mm, vmf->pud);
+	if (unlikely(!pud_none(*vmf->pud))) {
+		goto unlock_release;
+	} else {
+		pud_t entry;
+		ret = check_stable_address_space(vma->vm_mm);
+		if (ret)
+			goto unlock_release;
+		entry = mk_huge_pud(page, vma->vm_page_prot);
+		entry = tsp_maybe_pud_mkwrite(pud_mkdirty(entry), vma);
+
+		page_add_new_anon_rmap(page, vma, haddr, true);
+		set_pud_at(vma->vm_mm, haddr, vmf->pud, entry);
+		add_mm_counter(vma->vm_mm, MM_ANONPAGES, TSP_HPAGE_PUD_NR);
+		mm_inc_nr_ptes(vma->vm_mm);
+		spin_unlock(vmf->ptl);
+#if 0
+	printk("do_tsp_huge_pmd_anonymous_page [%#lx-%#lx] addr = %#lx, haddr "
+	       "= %#lx, paddr: %#lx entry: %#lx\n",
+	       vma->vm_start, vma->vm_end, vmf->address, haddr, paddr, pmd_val(entry));
+#endif
+	}
+	return 0;
+unlock_release:
+	spin_unlock(vmf->ptl);
+	return ret;
+
+
+	return ret;
 }
 
 #define mk_huge_pmd(page, prot) pmd_mkhuge(mk_pmd(page, prot))
@@ -2161,12 +2235,56 @@ spinlock_t *__pmd_tsp_huge_lock(pmd_t *pmd, struct vm_area_struct *vma)
 	return NULL;
 }
 
+spinlock_t *__pud_tsp_huge_lock(pud_t *pud, struct vm_area_struct *vma)
+{
+	spinlock_t *ptl;
+	ptl = pud_lock(vma->vm_mm, pud);
+	if (likely(pud_tsp_huge(*pud)))
+		return ptl;
+	spin_unlock(ptl);
+	return NULL;
+}
+
 #define tsp_tlb_remove_pmd_tlb_entry(tlb, pmdp, address)			\
 	do {								\
 		__tlb_adjust_range(tlb, address, TSP_HPAGE_PMD_SIZE);	\
 		tlb->cleared_pmds = 1;					\
 		__tlb_remove_pmd_tlb_entry(tlb, pmdp, address);		\
 	} while (0)
+
+#define tsp_tlb_remove_pud_tlb_entry(tlb, pudp, address)			\
+	do {								\
+		__tlb_adjust_range(tlb, address, TSP_HPAGE_PUD_SIZE);	\
+		tlb->cleared_puds = 1;					\
+		__tlb_remove_pud_tlb_entry(tlb, pudp, address);		\
+	} while (0)
+
+
+int zap_tsp_huge_pud(struct mmu_gather *tlb, struct vm_area_struct *vma,
+		     pud_t *pud, unsigned long addr)
+{
+	pud_t orig_pud;
+	spinlock_t *ptl;
+	struct page *page = NULL;
+
+	ptl = __pud_tsp_huge_lock(pud, vma);
+	if (!ptl)
+		return 0;
+	orig_pud =
+		pudp_huge_get_and_clear_full(tlb->mm, addr, pud, tlb->fullmm);
+	tsp_tlb_remove_pud_tlb_entry(tlb, pud, addr);
+
+	if (pud_present(orig_pud)) {
+		page = pud_page(orig_pud);
+		page_remove_rmap(page, true);
+		VM_BUG_ON_PAGE(page_mapcount(page) < 0, page);
+	}
+	add_mm_counter(vma->vm_mm, MM_ANONPAGES, -TSP_HPAGE_PUD_NR);
+	spin_unlock(ptl);
+	mm_dec_nr_ptes(vma->vm_mm);
+	tlb_remove_page_size(tlb, page, TSP_HPAGE_PUD_SIZE);
+	return 1;
+}
 
 
 int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
@@ -2200,6 +2318,14 @@ pmd_t tsp_pmdp_invalidate(struct vm_area_struct *vma, unsigned long address,
 {
 	pmd_t old = pmdp_establish(vma, address, pmdp, pmd_mknotpresent(*pmdp));
 	flush_tlb_range(vma, address, address + TSP_HPAGE_PMD_SIZE);
+	return old;
+}
+
+pud_t tsp_pudp_invalidate(struct vm_area_struct *vma, unsigned long address,
+			  pud_t *pudp)
+{
+	pud_t old = pudp_establish(vma, address, pudp, pud_mknotpresent(*pudp));
+	flush_tlb_range(vma, address, address + TSP_HPAGE_PUD_SIZE);
 	return old;
 }
 
@@ -2270,6 +2396,68 @@ bool move_tsp_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 		return true;
 	}
 	return false;
+}
+
+void split_tsp_huge_pud(struct vm_area_struct *vma, pud_t *pud,
+			unsigned long address)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	struct page *page;
+	spinlock_t *ptl;
+	pud_t old_pud, _pud;
+	unsigned long haddr, addr;
+	struct mmu_notifier_range range;
+	pmd_t *pgtable;
+	bool young, write, soft_dirty;
+	int i;
+
+	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma, vma->vm_mm,
+				address & TSP_HPAGE_PUD_MASK,
+				(address & TSP_HPAGE_PUD_MASK) +
+					TSP_HPAGE_PUD_SIZE);
+	mmu_notifier_invalidate_range_start(&range);
+	ptl = pud_lock(vma->vm_mm, pud);
+	haddr = range.start;
+
+	old_pud = tsp_pudp_invalidate(vma, haddr, pud);
+
+	page = pud_page(old_pud);
+	if (pud_dirty(old_pud))
+		SetPageDirty(page);
+	write = pud_write(old_pud);
+	young = pud_young(old_pud);
+	soft_dirty = pud_soft_dirty(old_pud);
+
+	pgtable = pmd_alloc_one(vma->vm_mm, address);
+	pud_populate(mm, &_pud, pgtable);
+
+	for (i = 0, addr = haddr; i < TSP_HPAGE_PMD_NR;
+	     i++, addr += TSP_HPAGE_PMD_SIZE) {
+		pmd_t entry, *pmd;
+		prep_new_tsp_page(page + i*TSP_HPAGE_PMD_NR);
+		page_add_new_anon_rmap(page + i*TSP_HPAGE_PMD_NR, vma, addr, true);
+		entry = mk_pmd(page + i*TSP_HPAGE_PMD_NR, READ_ONCE(vma->vm_page_prot));
+		if (likely(vma->vm_flags & VM_WRITE))
+			entry = pmd_mkwrite(entry);
+		if (!write)
+			entry = pmd_wrprotect(entry);
+		if (!young)
+			entry = pmd_mkold(entry);
+		if (soft_dirty)
+			entry = pmd_mksoft_dirty(entry);
+		pmd = pmd_offset(&_pud, addr);
+		BUG_ON(!pmd_none(*pmd));
+		set_pmd_at(mm, addr, pmd, entry);
+		atomic_inc(&page[i]._mapcount);
+	}
+
+	smp_wmb(); /* make pte visible before pmd */
+	pud_populate(mm, pud, pgtable);
+
+	spin_unlock(ptl);
+	mmu_notifier_invalidate_range_only_end(&range);
+
+
 }
 
 void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,

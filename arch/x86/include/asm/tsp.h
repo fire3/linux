@@ -55,6 +55,8 @@ static inline int tsp_vaddr_is_stack(unsigned long vaddr)
 #define TSP_HPAGE_PMD_SIZE	((1UL) << PMD_SHIFT)
 #define TSP_HPAGE_PMD_MASK	(~(TSP_HPAGE_PMD_SIZE - 1))
 
+#define TSP_HPAGE_PUD_ORDER (PUD_SHIFT-PAGE_SHIFT)
+#define TSP_HPAGE_PUD_NR (1<<TSP_HPAGE_PUD_ORDER)
 #define TSP_HPAGE_PUD_SIZE	((1UL) << PUD_SHIFT)
 #define TSP_HPAGE_PUD_MASK	(~(TSP_HPAGE_PUD_SIZE - 1))
 
