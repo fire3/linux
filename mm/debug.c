@@ -122,6 +122,9 @@ void __dump_page(struct page *page, const char *reason)
 	pr_warn("%sflags: %#lx(%pGp)%s\n", type, page->flags, &page->flags,
 		page_cma ? " CMA" : "");
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	pr_warn("tsp_buddy_page: %#lx\n",(unsigned long)page->tsp_buddy_page);
+#endif
 hex_only:
 	print_hex_dump(KERN_WARNING, "raw: ", DUMP_PREFIX_NONE, 32,
 			sizeof(unsigned long), page,

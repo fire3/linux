@@ -130,7 +130,11 @@ extern void put_tsp_page(struct page *page);
  * related to the physical page in case of virtualization.
  */
 #ifndef mm_forbids_zeropage
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#define mm_forbids_zeropage(X)	(1)
+#else
 #define mm_forbids_zeropage(X)	(0)
+#endif
 #endif
 
 /*
