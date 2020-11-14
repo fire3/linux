@@ -54,6 +54,7 @@ static unsigned long tsp_reserve_size __initdata;
 static bool tsp_reserve_called __initdata;
 
 bool tsp_pmd_huge_vma_suitable(struct vm_area_struct *vma, unsigned long haddr);
+static int prep_new_tsp_page(struct page *page);
 
 static int __init cmdline_parse_tsp_reserve(char *p)
 {
@@ -112,11 +113,12 @@ void __init tsp_reserve(int order)
 		reserved += size;
 		pr_info("tsp: reserved %lu MiB on node %d\n", size / SZ_1M,
 			nid);
-
 		if (reserved >= tsp_reserve_size)
 			break;
 	}
 	__tspblock_dump_all();
+
+
 }
 
 /*
@@ -1314,6 +1316,8 @@ struct tsp *tsp_alloc(unsigned long code_size, unsigned long heap_size,
 		      unsigned long mmap_size, unsigned long stack_size)
 {
 	struct tsp *tsp = NULL;
+	unsigned long addr;
+	struct page *page;
 
 	tsp = kzalloc(sizeof(struct tsp), GFP_KERNEL);
 	if (!tsp)
@@ -1350,6 +1354,29 @@ struct tsp *tsp_alloc(unsigned long code_size, unsigned long heap_size,
 	tsp->mm = current->mm;
 	tsp->task = current;
 	atomic_set(&tsp->users_count, 0);
+
+	for (addr = tsp->code_segment_paddr; addr < (tsp->code_segment_paddr + 
+				code_size); addr += PAGE_SIZE) {
+		page = pfn_to_page(addr >> PAGE_SHIFT);
+		prep_new_tsp_page(page);
+	}
+	for (addr = tsp->mmap_segment_paddr; addr < (tsp->mmap_segment_paddr + 
+				mmap_size); addr += PAGE_SIZE) {
+		page = pfn_to_page(addr >> PAGE_SHIFT);
+		prep_new_tsp_page(page);
+	}
+
+	for (addr = tsp->heap_segment_paddr; addr < (tsp->heap_segment_paddr + 
+				heap_size); addr += PAGE_SIZE) {
+		page = pfn_to_page(addr >> PAGE_SHIFT);
+		prep_new_tsp_page(page);
+	}
+
+	for (addr = tsp->stack_segment_paddr; addr < (tsp->stack_segment_paddr + 
+				stack_size); addr += PAGE_SIZE) {
+		page = pfn_to_page(addr >> PAGE_SHIFT);
+		prep_new_tsp_page(page);
+	}
 
 #if 0
 	printk("TSP ALLOC: [%s %d] CODE:%#lx HEAP:%#lx MMAP:%#lx STACK:%#lx\n",
@@ -1623,13 +1650,22 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 	pte = start_pte;
 	do {
 		pte_t ptent = *pte;
+		pte_t entry;
 
 		if (pte_none(ptent))
 			continue;
 		if (pte_present(ptent)) {
 			struct page *page = pte_page(ptent);
-			if (PageTsp(page))
+			
+			if (PageTsp(page)) {
+#if 0
+				printk("swap_pte[%s %d] %#lx [%#lx - %#lx]\n", 
+						current->comm, current->pid,
+						addr, 
+						vma->vm_start, vma->vm_end);
+#endif
 				continue;
+			}
 
 			pte_paddr = (pte_pfn(*pte)) << PAGE_SHIFT;
 			tsp_paddr = tsp_vaddr_to_paddr(tsp, addr);
@@ -1640,7 +1676,7 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 			copy_page((void *)__va(tsp_paddr),
 				  (void *)__va(pte_paddr));
 			old_prot = pte_pgprot(*pte);
-			*pte = pfn_pte(tsp_paddr >> PAGE_SHIFT, old_prot);
+			entry = pfn_pte(tsp_paddr >> PAGE_SHIFT, old_prot);
 // Avoid copy-on-write for some file page
 #if 0
 			if (!pte_write(*pte))
@@ -1650,7 +1686,10 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 			new_page = pfn_to_page(tsp_paddr >> PAGE_SHIFT);
 
 			dup_tsp_page(old_page, new_page);
-#if 1
+
+			flush_tlb_page(vma, addr);
+			set_pte_at(vma->vm_mm, addr, pte, entry);
+#if 0
 			if (PageAnon(old_page)) {
 				new_page->tsp_buddy_page = NULL;
 				page_remove_rmap(old_page, false);
@@ -1907,9 +1946,6 @@ int tsp_check_current(void)
 	up_read(&current->mm->mmap_sem);
 	if (err)
 		printk("[%s %d] TSP CHECK Failed.\n", current->comm,
-		       current->pid);
-	else
-		printk("[%s %d] TSP CHECK Passed.\n", current->comm,
 		       current->pid);
 	return err;
 }
@@ -2254,6 +2290,8 @@ int zap_tsp_huge_pud(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	spinlock_t *ptl;
 	struct page *page = NULL;
 
+	tlb_change_page_size(tlb, TSP_HPAGE_PUD_SIZE);
+
 	ptl = __pud_tsp_huge_lock(pud, vma);
 	if (!ptl)
 		return 0;
@@ -2280,6 +2318,8 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	pmd_t orig_pmd;
 	spinlock_t *ptl;
 	struct page *page = NULL;
+
+	tlb_change_page_size(tlb, TSP_HPAGE_PMD_SIZE);
 
 	ptl = __pmd_tsp_huge_lock(pmd, vma);
 	if (!ptl)
@@ -2509,6 +2549,50 @@ void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 	spin_unlock(ptl);
 	mmu_notifier_invalidate_range_only_end(&range);
 }
+
+int tsp_pmdp_set_access_flags(struct vm_area_struct *vma,
+			  unsigned long address, pmd_t *pmdp,
+			  pmd_t entry, int dirty)
+{
+	int changed = !pmd_same(*pmdp, entry);
+
+	VM_BUG_ON(address & ~TSP_HPAGE_PMD_MASK);
+
+	if (changed && dirty) {
+		set_pmd(pmdp, entry);
+		/*
+		 * We had a write-protection fault here and changed the pmd
+		 * to to more permissive. No need to flush the TLB for that,
+		 * #PF is architecturally guaranteed to do that and in the
+		 * worst-case we'll generate a spurious fault.
+		 */
+	}
+
+	return changed;
+}
+
+
+void tsp_huge_pmd_set_accessed(struct vm_fault *vmf, pmd_t orig_pmd)
+{
+	pmd_t entry;
+	unsigned long haddr;
+	bool write = vmf->flags & FAULT_FLAG_WRITE;
+
+	vmf->ptl = pmd_lock(vmf->vma->vm_mm, vmf->pmd);
+	if (unlikely(!pmd_same(*vmf->pmd, orig_pmd)))
+		goto unlock;
+
+	entry = pmd_mkyoung(orig_pmd);
+	if (write)
+		entry = pmd_mkdirty(entry);
+	haddr = vmf->address & TSP_HPAGE_PMD_MASK;
+	if (tsp_pmdp_set_access_flags(vmf->vma, haddr, vmf->pmd, entry, write))
+		update_mmu_cache_pmd(vmf->vma, vmf->address, vmf->pmd);
+
+unlock:
+	spin_unlock(vmf->ptl);
+}
+
 
 int tsp_alloc_and_create(unsigned long code_size, unsigned long heap_size,
 			 unsigned long mmap_size, unsigned long stack_size)

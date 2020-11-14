@@ -1117,7 +1117,6 @@ out_free_interp:
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 	if (elf_ex->e_flags == 0x10) {
 		mm->tsp_enabled = 1;
-		printk("[%s %d] TSP enabled\n",current->comm, current->pid);
 	}
 #endif
 	if ((current->flags & PF_RANDOMIZE) && (randomize_va_space > 1)) {

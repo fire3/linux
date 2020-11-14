@@ -274,6 +274,7 @@ bool move_tsp_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 		__tlb_remove_pmd_tlb_entry(tlb, pmdp, address);		\
 	} while (0)
 
+void tsp_huge_pmd_set_accessed(struct vm_fault *vmf, pmd_t orig_pmd);
 
 
 #endif
