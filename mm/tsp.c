@@ -1650,8 +1650,7 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 			new_page = pfn_to_page(tsp_paddr >> PAGE_SHIFT);
 
 			dup_tsp_page(old_page, new_page);
-
-#if 0
+#if 1
 			if (PageAnon(old_page)) {
 				new_page->tsp_buddy_page = NULL;
 				page_remove_rmap(old_page, false);
@@ -2548,9 +2547,7 @@ out:
 
 int tsp_setup_current()
 {
-	if (strcmp(current->comm, "specinvoke") == 0)
-		return 0;
-	if (strcmp(current->comm, "sh") == 0)
+	if (current->mm->tsp_enabled == 0)
 		return 0;
 
 	if (current->mm && !current->mm->tsp && current->mm->mmap_segment_env &&
@@ -2561,7 +2558,7 @@ int tsp_setup_current()
 				     current->mm->mmap_segment_env,
 				     current->mm->stack_segment_env);
 		tsp_swap_current();
-		printk("[%s %d] TSP enabled\n", current->comm, current->pid);
+		printk("[%s %d] TSP swapped\n", current->comm, current->pid);
 	}
 	return 0;
 }

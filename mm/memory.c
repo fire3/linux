@@ -3454,6 +3454,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		page = alloc_zeroed_tsp_page(vma, vmf->address);
 	} else {
 		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+		BUG_ON(PageTsp(page));
 	}
 #else
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
@@ -4588,7 +4589,7 @@ vm_fault_t handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 		if (!vma_is_anonymous(vma))
 			swap_tsp_vma_range(vma, address & PAGE_MASK, PAGE_SIZE);
 #endif
-		check_tsp_range(vma,address & PAGE_MASK, PAGE_SIZE, vma->vm_page_prot);
+		//check_tsp_range(vma,address & PAGE_MASK, PAGE_SIZE, vma->vm_page_prot);
 	}
 #endif
 	return ret;
