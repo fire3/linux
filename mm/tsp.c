@@ -1823,9 +1823,11 @@ int coalesce_pte_range(struct vm_area_struct *vma, struct mmu_gather *tlb,
 		pte_free_tlb(tlb, token, addr);
 		//add_mm_counter(vma->vm_mm, MM_ANONPAGES, TSP_HPAGE_PMD_NR);
 		//mm_inc_nr_ptes(vma->vm_mm);
+#if 0
 		printk("[%s %d] coalesce_pte_range %#lx %#lx pmd:%#lx\n",
 				current->comm, current->pid,
 				addr, paddr, pmd_val(entry));
+#endif
 	//}
 unlock:
 	spin_unlock(ptl);
@@ -2271,10 +2273,10 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, TSP_HPAGE_PMD_NR);
 		mm_inc_nr_ptes(vma->vm_mm);
 		spin_unlock(vmf->ptl);
-#if 1
-		printk("do_tsp_huge_pmd_anonymous_page [%#lx-%#lx] addr = %#lx, haddr "
-				"= %#lx, paddr: %#lx entry: %#lx\n",
-				vma->vm_start, vma->vm_end, vmf->address, haddr, paddr, pmd_val(entry));
+#if 0
+		printk("huge [%#lx-%#lx] addr = %#lx "
+				"paddr: %#lx entry: %#lx\n",
+				vma->vm_start, vma->vm_end, vmf->address, paddr, pmd_val(entry));
 #endif
 	}
 	return 0;

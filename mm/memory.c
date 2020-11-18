@@ -2767,6 +2767,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 			tsp_page->tsp_buddy_page = NULL;
 			entry = mk_pte(tsp_page, vma->vm_page_prot);
 			entry = maybe_mkwrite(pte_mkdirty(entry), vma);
+			page_remove_rmap(new_page, false);
 			put_page(new_page);
 			old_page = NULL;
 		}
@@ -4551,7 +4552,7 @@ vm_fault_t handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 	}
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	coalesce_tsp_vma(vma);
+	//coalesce_tsp_vma(vma);
 #endif
 	return ret;
 }
