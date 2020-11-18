@@ -780,14 +780,13 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	 * If it's a COW mapping, write protect it both
 	 * in the parent and the child
 	 */
-#if 1
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 	if (!is_current_tsp_swapped()) {
 		ptep_set_wrprotect(src_mm, addr, src_pte);
 		pte = pte_wrprotect(pte);
 	} else {
-		page = vm_normal_page(vma, addr, pte);
 		struct page *new_page;
-
+		page = vm_normal_page(vma, addr, pte);
 		new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
 		if (!new_page)
 			return -ENOMEM;
@@ -4407,18 +4406,6 @@ static vm_fault_t __handle_mm_fault(struct vm_area_struct *vma,
 	if (!vmf.pud)
 		return VM_FAULT_OOM;
 retry_pud:
-#if 0 
-#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (pud_none(*vmf.pud) && is_current_tsp_swapped()) {
-		if (vma_is_anonymous(vmf.vma)) {
-			ret = do_tsp_huge_pud_anonymous_page(&vmf);
-			if (!(ret & VM_FAULT_FALLBACK)) {
-				return ret;
-			}
-		}
-	}
-#endif
-#endif
 	if (pud_none(*vmf.pud) && __transparent_hugepage_enabled(vma)) {
 		ret = create_huge_pud(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
@@ -4451,18 +4438,6 @@ retry_pud:
 		goto retry_pud;
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (tsp_vaddr_is_stack(address)) {
-		vma->vm_mm->stack_segment_used++;
-	}
-	if (tsp_vaddr_is_heap(address)) {
-		vma->vm_mm->heap_segment_used++;
-	}
-	if (tsp_vaddr_is_mmap(address)) {
-		vma->vm_mm->mmap_segment_used++;
-	}
-	if (tsp_vaddr_is_code(address)) {
-		vma->vm_mm->code_segment_used++;
-	}
 #if 1
 	if (is_vma_tsp_swapped(vma)) {
 		if (pmd_none(*vmf.pmd)) {
@@ -4472,7 +4447,23 @@ retry_pud:
 					return ret;
 				}
 			}
-		} 	
+		} else {
+			pmd_t orig_pmd = *vmf.pmd;
+			barrier();
+			if (pmd_tsp_huge(orig_pmd)) {
+
+				if (dirty && !pmd_write(orig_pmd)) {
+					printk("not imp wp_huge_pmd ========!\n");
+					//ret = wp_huge_pmd(&vmf, orig_pmd);
+					//if (!(ret & VM_FAULT_FALLBACK))
+					//	return ret;
+				} else {
+					tsp_huge_pmd_set_accessed(&vmf, orig_pmd);
+					return 0;
+				}
+			}
+
+		}
 	}
 #endif
 #endif
@@ -4560,7 +4551,7 @@ vm_fault_t handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 	}
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	//coalesce_tsp_vma(vma);
+	coalesce_tsp_vma(vma);
 #endif
 	return ret;
 }

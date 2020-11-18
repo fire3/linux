@@ -1835,6 +1835,10 @@ out:
 	vma->vm_flags |= VM_SOFTDIRTY;
 
 	vma_set_page_prot(vma);
+
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	//coalesce_tsp_vma(vma);
+#endif
 	return addr;
 
 unmap_and_free_vma:
