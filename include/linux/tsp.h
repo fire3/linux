@@ -277,6 +277,22 @@ bool move_tsp_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 void tsp_huge_pmd_set_accessed(struct vm_fault *vmf, pmd_t orig_pmd);
 
 
+struct page *follow_tsp_huge_pmd(struct vm_area_struct *vma,
+				   unsigned long addr,
+				   pmd_t *pmd,
+				   unsigned int flags);
+
+spinlock_t *__pmd_tsp_huge_lock(pmd_t *pmd, struct vm_area_struct *vma);
+static inline spinlock_t *pmd_tsp_huge_lock(pmd_t *pmd,
+		struct vm_area_struct *vma)
+{
+	if (pmd_tsp_huge(*pmd))
+		return __pmd_tsp_huge_lock(pmd, vma);
+	else
+		return NULL;
+}
+
+int coalesce_tsp_vma(struct vm_area_struct *vma);
 #endif
 
 

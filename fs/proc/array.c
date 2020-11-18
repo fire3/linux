@@ -399,6 +399,9 @@ static inline void task_thp_status(struct seq_file *m, struct mm_struct *mm)
 	if (thp_enabled)
 		thp_enabled = !test_bit(MMF_DISABLE_THP, &mm->flags);
 	seq_printf(m, "THP_enabled:\t%d\n", thp_enabled);
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	seq_printf(m, "TSP_enabled:\t%d\n",mm->tsp_enabled);
+#endif
 }
 
 int proc_pid_status(struct seq_file *m, struct pid_namespace *ns,

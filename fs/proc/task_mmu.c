@@ -19,11 +19,15 @@
 #include <linux/shmem_fs.h>
 #include <linux/uaccess.h>
 #include <linux/pkeys.h>
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#include <linux/tsp.h>
+#endif
 
 #include <asm/elf.h>
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
 #include "internal.h"
+
 
 #define SEQ_PUT_DEC(str, val) \
 		seq_put_decimal_ull_width(m, str, (val) << (PAGE_SHIFT-10), 8)
@@ -563,10 +567,29 @@ static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
 	smaps_account(mss, page, true, pmd_young(*pmd), pmd_dirty(*pmd), locked);
 }
 #else
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
+		struct mm_walk *walk)
+{
+	struct mem_size_stats *mss = walk->private;
+	struct vm_area_struct *vma = walk->vma;
+	bool locked = !!(vma->vm_flags & VM_LOCKED);
+	struct page *page;
+
+	/* FOLL_DUMP will return -EFAULT on huge zero page */
+	page = follow_tsp_huge_pmd(vma, addr, pmd, FOLL_DUMP);
+	if (IS_ERR_OR_NULL(page))
+		return;
+	if (PageAnon(page))
+		mss->anonymous += TSP_HPAGE_PMD_SIZE;
+	smaps_account(mss, page, true, pmd_young(*pmd), pmd_dirty(*pmd), locked);
+}
+#else
 static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
 		struct mm_walk *walk)
 {
 }
+#endif
 #endif
 
 static int smaps_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
@@ -576,7 +599,11 @@ static int smaps_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 	pte_t *pte;
 	spinlock_t *ptl;
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	ptl = pmd_tsp_huge_lock(pmd, vma);
+#else
 	ptl = pmd_trans_huge_lock(pmd, vma);
+#endif
 	if (ptl) {
 		if (pmd_present(*pmd))
 			smaps_pmd_entry(pmd, addr, walk);

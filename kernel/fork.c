@@ -1033,6 +1033,14 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && !USE_SPLIT_PMD_PTLOCKS
 	mm->pmd_huge_pte = NULL;
 #endif
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	mm->tsp_enabled = 0;
+	mm->mmap_segment_env = 0;
+	mm->heap_segment_env = 0;
+	mm->stack_segment_env = 0;
+	mm->code_segment_env = 0;
+	mm->tsp = NULL;
+#endif
 	mm_init_uprobes_state(mm);
 
 	if (current->mm) {

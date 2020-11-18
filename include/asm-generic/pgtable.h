@@ -1030,6 +1030,11 @@ static inline int pmd_none_or_trans_huge_or_clear_bad(pmd_t *pmd)
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	barrier();
 #endif
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	barrier();
+	if (pmd_none(pmdval) || pmd_trans_huge(pmdval))
+		return 1;
+#endif
 	/*
 	 * !pmd_present() checks for pmd migration entries
 	 *
