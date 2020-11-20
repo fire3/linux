@@ -4551,9 +4551,6 @@ vm_fault_t handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 			mem_cgroup_oom_synchronize(false);
 	}
 
-#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	//coalesce_tsp_vma(vma);
-#endif
 	return ret;
 }
 EXPORT_SYMBOL_GPL(handle_mm_fault);

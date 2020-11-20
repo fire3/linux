@@ -31,6 +31,10 @@
 #include <asm/cpu_entry_area.h>		/* exception stack		*/
 #include <asm/pgtable_areas.h>		/* VMALLOC_START, ...		*/
 
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#include <linux/tsp.h>
+#endif
+
 #define CREATE_TRACE_POINTS
 #include <asm/trace/exceptions.h>
 
@@ -1484,6 +1488,9 @@ good_area:
 	}
 
 	up_read(&mm->mmap_sem);
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	coalesce_tsp_vma(vma);
+#endif
 	if (unlikely(fault & VM_FAULT_ERROR)) {
 		mm_fault_error(regs, hw_error_code, address, fault);
 		return;

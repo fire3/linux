@@ -751,6 +751,10 @@ pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address)
 	barrier();
 	if (!pmd_present(pmde) || pmd_trans_huge(pmde))
 		pmd = NULL;
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (pmd_tsp_huge(pmde))
+		pmd = NULL;
+#endif
 out:
 	return pmd;
 }
