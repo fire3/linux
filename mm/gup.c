@@ -24,6 +24,8 @@
 
 #include "internal.h"
 
+#include <linux/tsp.h>
+
 struct follow_page_context {
 	struct dev_pagemap *pgmap;
 	unsigned int page_mask;
@@ -597,8 +599,13 @@ retry:
 		if (page)
 			return page;
 	}
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (likely(!pmd_tsp_huge(pmdval)))
+		return follow_page_pte(vma, address, pmd, flags, &ctx->pgmap);
+#else
 	if (likely(!pmd_trans_huge(pmdval)))
 		return follow_page_pte(vma, address, pmd, flags, &ctx->pgmap);
+#endif
 
 	if ((flags & FOLL_NUMA) && pmd_protnone(pmdval))
 		return no_page_table(vma, flags);
@@ -616,10 +623,17 @@ retry_locked:
 		pmd_migration_entry_wait(mm, pmd);
 		goto retry_locked;
 	}
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	if (unlikely(!pmd_tsp_huge(*pmd))) {
+		spin_unlock(ptl);
+		return follow_page_pte(vma, address, pmd, flags, &ctx->pgmap);
+	}
+#else
 	if (unlikely(!pmd_trans_huge(*pmd))) {
 		spin_unlock(ptl);
 		return follow_page_pte(vma, address, pmd, flags, &ctx->pgmap);
 	}
+#endif
 	if (flags & (FOLL_SPLIT | FOLL_SPLIT_PMD)) {
 		int ret;
 		page = pmd_page(*pmd);
@@ -650,9 +664,17 @@ retry_locked:
 		return ret ? ERR_PTR(ret) :
 			follow_page_pte(vma, address, pmd, flags, &ctx->pgmap);
 	}
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	page = follow_tsp_huge_pmd(vma, address, pmd, flags);
+#else
 	page = follow_trans_huge_pmd(vma, address, pmd, flags);
+#endif
 	spin_unlock(ptl);
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+	ctx->page_mask = TSP_HPAGE_PMD_NR - 1;
+#else
 	ctx->page_mask = HPAGE_PMD_NR - 1;
+#endif
 	return page;
 }
 
@@ -877,6 +899,7 @@ static int faultin_page(struct task_struct *tsk, struct vm_area_struct *vma,
 	}
 
 	ret = handle_mm_fault(vma, address, fault_flags);
+
 	if (ret & VM_FAULT_ERROR) {
 		int err = vm_fault_to_errno(ret, *flags);
 

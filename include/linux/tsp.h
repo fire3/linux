@@ -293,6 +293,8 @@ static inline spinlock_t *pmd_tsp_huge_lock(pmd_t *pmd,
 }
 
 int coalesce_tsp_vma(struct vm_area_struct *vma);
+int coalesce_tsp_pmd(struct vm_area_struct *vma, unsigned long address);
+
 #endif
 
 

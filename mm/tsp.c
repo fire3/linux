@@ -1809,8 +1809,13 @@ int coalesce_tsp_pmd(struct vm_area_struct *vma, unsigned long address)
 	spinlock_t *pmd_ptl, *pte_ptl;
 	pgtable_t token;
 
-	VM_BUG_ON(address & ~TSP_HPAGE_PMD_MASK);
+	if (!is_vma_tsp_swapped(vma))
+		return 0;
 
+	if (!vma_is_anonymous(vma))
+		return 0;
+
+	VM_BUG_ON(address & ~TSP_HPAGE_PMD_MASK);
 
 	down_write(&mm->mmap_sem);
 

@@ -1418,6 +1418,7 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 	if (IS_ERR_VALUE(addr))
 		return addr;
 
+
 	if (flags & MAP_FIXED_NOREPLACE) {
 		struct vm_area_struct *vma = find_vma(mm, addr);
 
@@ -1526,6 +1527,14 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 			 * Set pgoff according to addr for anon_vma.
 			 */
 			pgoff = addr >> PAGE_SHIFT;
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+#if 0
+			if (tsp_vaddr_is_mmap(addr) && is_current_tsp_swapped()) 
+				flags = flags | MAP_POPULATE;
+			if (tsp_vaddr_is_heap(addr) && is_current_tsp_swapped()) 
+				flags = flags | MAP_POPULATE;
+#endif
+#endif
 			break;
 		default:
 			return -EINVAL;
@@ -1836,9 +1845,6 @@ out:
 
 	vma_set_page_prot(vma);
 
-#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	//coalesce_tsp_vma(vma);
-#endif
 	return addr;
 
 unmap_and_free_vma:
