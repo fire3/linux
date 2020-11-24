@@ -1489,7 +1489,7 @@ good_area:
 
 	up_read(&mm->mmap_sem);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (is_vma_tsp_swapped(vma))
+	if (is_vma_tsp_swapped(vma) && (mm->tsp_pmd))
 		coalesce_tsp_pmd(vma, address & TSP_HPAGE_PMD_MASK);
 #endif
 	if (unlikely(fault & VM_FAULT_ERROR)) {

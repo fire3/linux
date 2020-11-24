@@ -1904,6 +1904,8 @@ static int __do_execve_file(int fd, struct filename *filename,
 					current->mm->tsp_check = 1;
 				if (strncmp(buf, "TSP_SHOW", 8) == 0)
 					current->mm->tsp_show_size = 1;
+				if (strncmp(buf, "TSP_PMD", 7) == 0)
+					current->mm->tsp_pmd = 1;
 				p += len;
 			}
 		}

@@ -30,6 +30,7 @@
 #include <linux/numa.h>
 #include <linux/llist.h>
 #include <linux/cma.h>
+#include <linux/timekeeping.h>
 
 #include <asm/io.h>
 #include <asm/mmu_context.h>
@@ -2765,18 +2766,21 @@ out:
 
 int tsp_setup_current()
 {
+	unsigned long s, e;
 	if (current->mm->tsp_enabled == 0)
 		return 0;
 
 	if (current->mm && !current->mm->tsp && current->mm->mmap_segment_env &&
 	    current->mm->code_segment_env && current->mm->heap_segment_env &&
 	    current->mm->stack_segment_env) {
+		s = ktime_get_ns();
 		tsp_alloc_and_create(current->mm->code_segment_env,
 				     current->mm->heap_segment_env,
 				     current->mm->mmap_segment_env,
 				     current->mm->stack_segment_env);
 		tsp_swap_current();
-		printk("[%s %d] TSP swapped\n", current->comm, current->pid);
+		e = ktime_get_ns();
+		printk("[%s %d] TSP setup took %ld ns\n", current->comm, current->pid, ns);
 	}
 	return 0;
 }

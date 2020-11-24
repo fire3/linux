@@ -535,6 +535,7 @@ struct mm_struct {
 		struct uprobes_state uprobes_state;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 		struct tsp *tsp;
+		bool tsp_pmd; /* Coalesce PMD */
 		bool tsp_check;
 		bool tsp_show_size;
 		bool tsp_enabled;
