@@ -1906,6 +1906,10 @@ static int __do_execve_file(int fd, struct filename *filename,
 					current->mm->tsp_show_size = 1;
 				if (strncmp(buf, "TSP_PMD", 7) == 0)
 					current->mm->tsp_pmd = 1;
+				if (strncmp(buf, "TSP_PUD", 7) == 0)
+					current->mm->tsp_pud = 1;
+				if (strncmp(buf, "TSP_MERGE_PMD", 13) == 0)
+					current->mm->tsp_pmd_merge = 1;
 				p += len;
 			}
 		}

@@ -1329,7 +1329,13 @@ struct tsp *tsp_alloc(unsigned long code_size, unsigned long heap_size,
 	if (!tsp)
 		return ERR_PTR(-ENOMEM);
 
-	tsp->mmap_segment_paddr = tspblock_alloc(mmap_size, PMD_SIZE);
+	if (current->mm->tsp_pud)
+		tsp->mmap_segment_paddr = tspblock_alloc(mmap_size, PUD_SIZE);
+	else if (current->mm->tsp_pmd)
+		tsp->mmap_segment_paddr = tspblock_alloc(mmap_size, PMD_SIZE);
+	else 
+		tsp->mmap_segment_paddr = tspblock_alloc(mmap_size, PMD_SIZE);
+
 	if (!tsp->mmap_segment_paddr) {
 		tsp_destroy(tsp);
 		return ERR_PTR(-ENOMEM);
@@ -1343,7 +1349,13 @@ struct tsp *tsp_alloc(unsigned long code_size, unsigned long heap_size,
 	}
 	tsp->code_segment_size = code_size;
 
-	tsp->heap_segment_paddr = tspblock_alloc(heap_size, PMD_SIZE);
+	if (current->mm->tsp_pud)
+		tsp->heap_segment_paddr = tspblock_alloc(heap_size, PUD_SIZE);
+	else if (current->mm->tsp_pmd)
+		tsp->heap_segment_paddr = tspblock_alloc(heap_size, PMD_SIZE);
+	else
+		tsp->heap_segment_paddr = tspblock_alloc(heap_size, PMD_SIZE);
+
 	if (!tsp->heap_segment_paddr) {
 		tsp_destroy(tsp);
 		return ERR_PTR(-ENOMEM);
@@ -1599,6 +1611,15 @@ int swap_pte_range(struct vm_area_struct *vma, pmd_t *pmd, unsigned long addr,
 			if (tsp_paddr == 0)
 				continue;
 
+			if (tsp_vaddr_is_mmap(addr))
+				mm->tsp->mmap_segment_swapped += PAGE_SIZE;
+			if (tsp_vaddr_is_code(addr))
+				mm->tsp->code_segment_swapped += PAGE_SIZE;
+			if (tsp_vaddr_is_heap(addr))
+				mm->tsp->heap_segment_swapped += PAGE_SIZE;
+			if (tsp_vaddr_is_stack(addr))
+				mm->tsp->stack_segment_swapped += PAGE_SIZE;
+
 			copy_page((void *)__va(tsp_paddr),
 				  (void *)__va(pte_paddr));
 			old_prot = pte_pgprot(*pte);
@@ -1775,6 +1796,30 @@ int check_tsp_range(struct vm_area_struct *vma, unsigned long addr,
 	return err;
 }
 
+static int __coalesce_pud_check(struct vm_area_struct *vma,
+				unsigned long address, pmd_t *pmd)
+{
+	pmd_t *_pmd;
+
+	for (_pmd = pmd; _pmd < pmd + TSP_HPAGE_PMD_NR;
+	     _pmd++, address += PMD_SIZE) {
+		pmd_t pmdval = *_pmd;
+		unsigned long pfn =
+			tsp_vaddr_to_paddr(vma->vm_mm->tsp, address) >>
+			PAGE_SHIFT;
+		if (pmd_none(pmdval))
+			goto out;
+		if (!pmd_present(pmdval))
+			goto out;
+		if (pfn != pmd_pfn(pmdval))
+			goto out;
+	}
+	return 1;
+
+out:
+	return 0;
+}
+
 static int __coalesce_pmd_check(struct vm_area_struct *vma,
 				unsigned long address, pte_t *pte)
 {
@@ -1796,6 +1841,68 @@ static int __coalesce_pmd_check(struct vm_area_struct *vma,
 	return 1;
 
 out:
+	return 0;
+}
+
+pud_t *mm_find_pud(struct mm_struct *mm, unsigned long address)
+{
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud = NULL;
+
+	pgd = pgd_offset(mm, address);
+	if (!pgd_present(*pgd))
+		goto out;
+
+	p4d = p4d_offset(pgd, address);
+	if (!p4d_present(*p4d))
+		goto out;
+
+	pud = pud_offset(p4d, address);
+	if (!pud_present(*pud) || pud_tsp_huge(*pud)) 
+		pud = NULL;
+out:
+	return pud;
+}
+
+
+int coalesce_tsp_pud(struct vm_area_struct *vma, unsigned long address)
+{
+	pud_t *pud, _pud;
+	pmd_t *pmd;
+	struct page *page;
+	int ok;
+	struct mm_struct *mm = vma->vm_mm;
+	struct mmu_notifier_range range;
+	spinlock_t *pud_ptl, *pmd_ptl;
+	pgtable_t token;
+
+	if (!is_vma_tsp_swapped(vma))
+		return 0;
+
+	if (!vma_is_anonymous(vma))
+		return 0;
+
+	VM_BUG_ON(address & ~TSP_HPAGE_PUD_MASK);
+
+	down_write(&mm->mmap_sem);
+
+	pud = mm_find_pud(mm, address);
+	if (!pud) {
+		goto out;
+	}
+	pud_ptl = pud_lockptr(mm, pud);
+	pmd = pmd_offset(pud, address);
+
+	spin_lock(pud_ptl);
+	ok = __coalesce_pud_check(vma, address, pmd);
+	spin_unlock(pud_ptl);
+
+	if (ok)
+		printk("[%s %d] pud %#lx ok\n",current->comm, current->pid, address);
+
+out:
+	up_write(&mm->mmap_sem);
 	return 0;
 }
 
@@ -1885,6 +1992,8 @@ int coalesce_tsp_pmd(struct vm_area_struct *vma, unsigned long address)
 	update_mmu_cache_pmd(vma, address, pmd);
 	spin_unlock(pmd_ptl);
 	pte_free(vma->vm_mm, token);
+	vma->vm_mm->tsp_coalesce_pmd_count++;
+	mm_dec_nr_ptes(vma->vm_mm);
 #if 0
 	printk("[%s %d] coalesce_tsp_pmd %#lx vma [%#lx - %#lx] pmd:%#lx\n",
 			current->comm, current->pid,
@@ -1978,6 +2087,18 @@ int is_current_tsp_swapped(void)
 
 void tsp_exit_dump(void)
 {
+	if (current && current->mm && current->mm->tsp_show_size) {
+		printk("[%s %d]: TSP heap:%ld KB, mmap:%ld KB,2M huge: %ld, 1G huge: %ld, coalesced 2M huge: %ld, coalesced 1G huge: %ld\n",
+				current->comm, current->pid, 
+				current->mm->heap_segment_used / 1024,
+				current->mm->mmap_segment_used / 1024,
+				current->mm->tsp_hugep_pmd_count,
+				current->mm->tsp_hugep_pud_count,
+				current->mm->tsp_coalesce_pmd_count,
+				current->mm->tsp_coalesce_pud_count
+				);
+
+	}
 	if (current && current->mm && current->mm->tsp_check) {
 		tsp_check_current();
 	}
@@ -2120,6 +2241,15 @@ struct page *alloc_zeroed_tsp_page(struct vm_area_struct *vma,
 	page = pfn_to_page(paddr >> PAGE_SHIFT);
 	prep_new_tsp_page(page);
 	clear_page(__va(paddr));
+	if (vma->vm_mm->tsp_show_size) {
+		if (tsp_vaddr_is_heap(address)) {
+			vma->vm_mm->heap_segment_used += PAGE_SIZE;
+		}
+		if (tsp_vaddr_is_mmap(address)) {
+			vma->vm_mm->mmap_segment_used += PAGE_SIZE;
+		}
+	}
+
 #if 0
 	if (address >= 0x200000010000 && address <= 0x200000020000) {
 		struct page *npage;
@@ -2171,7 +2301,7 @@ vm_fault_t do_tsp_huge_pud_anonymous_page(struct vm_fault *vmf)
 	vm_fault_t ret = 0;
 	int i;
 
-	if (!tsp_pmd_huge_vma_suitable(vma, haddr)) {
+	if (!tsp_pud_huge_vma_suitable(vma, haddr)) {
 		return VM_FAULT_FALLBACK;
 	}
 
@@ -2179,12 +2309,6 @@ vm_fault_t do_tsp_huge_pud_anonymous_page(struct vm_fault *vmf)
 		return VM_FAULT_OOM;
 	}
 
-	if (tsp_vaddr_is_heap(vmf->address)) {
-		vma->vm_mm->heap_segment_used += (TSP_HPAGE_PUD_NR - 1);
-	}
-	if (tsp_vaddr_is_mmap(vmf->address)) {
-		vma->vm_mm->mmap_segment_used += (TSP_HPAGE_PUD_NR - 1);
-	}
 
 	gfp = GFP_TRANSHUGE_LIGHT;
 
@@ -2202,11 +2326,11 @@ vm_fault_t do_tsp_huge_pud_anonymous_page(struct vm_fault *vmf)
 		ret = check_stable_address_space(vma->vm_mm);
 		if (ret)
 			goto unlock_release;
-		prep_new_tsp_page(page);
 		for (i = 0; i < TSP_HPAGE_PUD_NR; i++) {
+			prep_new_tsp_page(page + i);
 			clear_page(__va(paddr + i * PAGE_SIZE));
+			__SetPageUptodate(page + i);
 		}
-		__SetPageUptodate(page);
 
 		entry = mk_huge_pud(page, vma->vm_page_prot);
 		entry = tsp_maybe_pud_mkwrite(pud_mkdirty(entry), vma);
@@ -2214,8 +2338,20 @@ vm_fault_t do_tsp_huge_pud_anonymous_page(struct vm_fault *vmf)
 		page_add_new_anon_rmap(page, vma, haddr, false);
 		set_pud_at(vma->vm_mm, haddr, vmf->pud, entry);
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, TSP_HPAGE_PUD_NR);
-		mm_inc_nr_ptes(vma->vm_mm);
+		//mm_inc_nr_ptes(vma->vm_mm);
 		spin_unlock(vmf->ptl);
+
+		if (vma->vm_mm->tsp_show_size) {
+			if (tsp_vaddr_is_heap(vmf->address)) {
+				vma->vm_mm->heap_segment_used += (PUD_PAGE_SIZE);
+			}
+			if (tsp_vaddr_is_mmap(vmf->address)) {
+				vma->vm_mm->mmap_segment_used += (PUD_PAGE_SIZE);
+			}
+		}
+
+		vma->vm_mm->tsp_hugep_pud_count++;
+
 	}
 	return 0;
 unlock_release:
@@ -2261,6 +2397,8 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		if (ret)
 			goto unlock_release;
 
+		//prep_new_tsp_page(page);
+
 		for (i = 0; i < TSP_HPAGE_PMD_NR; i++) {
 			prep_new_tsp_page(page + i);
 			clear_page(__va(paddr + i * PAGE_SIZE));
@@ -2272,13 +2410,23 @@ vm_fault_t do_tsp_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		page_add_new_anon_rmap(page, vma, haddr, false);
 		set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
 		add_mm_counter(vma->vm_mm, MM_ANONPAGES, TSP_HPAGE_PMD_NR);
-		mm_inc_nr_ptes(vma->vm_mm);
+		//mm_inc_nr_ptes(vma->vm_mm);
 		spin_unlock(vmf->ptl);
 #if 0
 		printk("huge [%#lx-%#lx] addr = %#lx "
 				"paddr: %#lx entry: %#lx\n",
 				vma->vm_start, vma->vm_end, vmf->address, paddr, pmd_val(entry));
 #endif
+		if (vma->vm_mm->tsp_show_size) {
+			if (tsp_vaddr_is_heap(vmf->address)) {
+				vma->vm_mm->heap_segment_used += (PMD_PAGE_SIZE);
+			}
+			if (tsp_vaddr_is_mmap(vmf->address)) {
+				vma->vm_mm->mmap_segment_used += (PMD_PAGE_SIZE);
+			}
+		}
+
+		vma->vm_mm->tsp_hugep_pmd_count++;
 	}
 	return 0;
 unlock_release:
@@ -2353,7 +2501,7 @@ int zap_tsp_huge_pud(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	}
 	add_mm_counter(vma->vm_mm, MM_ANONPAGES, -TSP_HPAGE_PUD_NR);
 	spin_unlock(ptl);
-	mm_dec_nr_ptes(vma->vm_mm);
+	//mm_dec_nr_ptes(vma->vm_mm);
 	tlb_remove_page_size(tlb, page, TSP_HPAGE_PUD_SIZE);
 	return 1;
 }
@@ -2381,7 +2529,7 @@ int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 	}
 	add_mm_counter(vma->vm_mm, MM_ANONPAGES, -TSP_HPAGE_PMD_NR);
 	spin_unlock(ptl);
-	mm_dec_nr_ptes(vma->vm_mm);
+	//mm_dec_nr_ptes(vma->vm_mm);
 	tlb_remove_page_size(tlb, page, TSP_HPAGE_PMD_SIZE);
 
 	return 1;
@@ -2513,10 +2661,10 @@ void split_tsp_huge_pud(struct vm_area_struct *vma, pud_t *pud,
 		prep_new_tsp_page(page + i * TSP_HPAGE_PMD_NR);
 		page_add_new_anon_rmap(page + i * TSP_HPAGE_PMD_NR, vma, addr,
 				       false);
-		entry = mk_pmd(page + i * TSP_HPAGE_PMD_NR,
+		entry = mk_huge_pmd(page + i * TSP_HPAGE_PMD_NR,
 			       READ_ONCE(vma->vm_page_prot));
-		if (likely(vma->vm_flags & VM_WRITE))
-			entry = pmd_mkwrite(entry);
+		entry = tsp_maybe_pmd_mkwrite(entry, vma);
+
 		if (!write)
 			entry = pmd_wrprotect(entry);
 		if (!young)
@@ -2526,7 +2674,6 @@ void split_tsp_huge_pud(struct vm_area_struct *vma, pud_t *pud,
 		pmd = pmd_offset(&_pud, addr);
 		BUG_ON(!pmd_none(*pmd));
 		set_pmd_at(mm, addr, pmd, entry);
-		atomic_inc(&page[i]._mapcount);
 	}
 
 	smp_wmb(); /* make pte visible before pmd */
@@ -2534,6 +2681,7 @@ void split_tsp_huge_pud(struct vm_area_struct *vma, pud_t *pud,
 
 	spin_unlock(ptl);
 	mmu_notifier_invalidate_range_only_end(&range);
+	mm_inc_nr_ptes(mm);
 }
 
 void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
@@ -2598,7 +2746,29 @@ void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 
 	spin_unlock(ptl);
 	mmu_notifier_invalidate_range_only_end(&range);
+	mm_inc_nr_ptes(mm);
 }
+
+int tsp_pudp_set_access_flags(struct vm_area_struct *vma, unsigned long address,
+			      pud_t *pudp, pud_t entry, int dirty)
+{
+	int changed = !pud_same(*pudp, entry);
+
+	VM_BUG_ON(address & ~TSP_HPAGE_PUD_MASK);
+
+	if (changed && dirty) {
+		set_pud(pudp, entry);
+		/*
+		 * We had a write-protection fault here and changed the pud
+		 * to to more permissive. No need to flush the TLB for that,
+		 * #PF is architecturally guaranteed to do that and in the
+		 * worst-case we'll generate a spurious fault.
+		 */
+	}
+
+	return changed;
+}
+
 
 int tsp_pmdp_set_access_flags(struct vm_area_struct *vma, unsigned long address,
 			      pmd_t *pmdp, pmd_t entry, int dirty)
@@ -2619,6 +2789,28 @@ int tsp_pmdp_set_access_flags(struct vm_area_struct *vma, unsigned long address,
 
 	return changed;
 }
+
+void tsp_huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud)
+{
+	pud_t entry;
+	unsigned long haddr;
+	bool write = vmf->flags & FAULT_FLAG_WRITE;
+
+	vmf->ptl = pud_lock(vmf->vma->vm_mm, vmf->pud);
+	if (unlikely(!pud_same(*vmf->pud, orig_pud)))
+		goto unlock;
+
+	entry = pud_mkyoung(orig_pud);
+	if (write)
+		entry = pud_mkdirty(entry);
+	haddr = vmf->address & TSP_HPAGE_PUD_MASK;
+	if (tsp_pudp_set_access_flags(vmf->vma, haddr, vmf->pud, entry, write))
+		update_mmu_cache_pud(vmf->vma, vmf->address, vmf->pud);
+
+unlock:
+	spin_unlock(vmf->ptl);
+}
+
 
 void tsp_huge_pmd_set_accessed(struct vm_fault *vmf, pmd_t orig_pmd)
 {
@@ -2780,7 +2972,15 @@ int tsp_setup_current()
 				     current->mm->stack_segment_env);
 		tsp_swap_current();
 		e = ktime_get_ns();
-		printk("[%s %d] TSP setup took %ld ns\n", current->comm, current->pid, ns);
+		printk("[%s %d] TSP enabled, took %ld ns, [CODE:%ld KB] "
+		       "[HEAP:%ld KB] [MMAP:%ld KB] [STACK:%ld KB]\n",
+		       current->comm, current->pid, 
+		       e - s,
+		       current->mm->tsp->code_segment_swapped / 1024,
+		       current->mm->tsp->heap_segment_swapped / 1024,
+		       current->mm->tsp->mmap_segment_swapped / 1024,
+		       current->mm->tsp->stack_segment_swapped / 1024
+		       );
 	}
 	return 0;
 }

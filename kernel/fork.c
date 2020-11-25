@@ -1039,7 +1039,18 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm->heap_segment_env = 0;
 	mm->stack_segment_env = 0;
 	mm->code_segment_env = 0;
+	mm->mmap_segment_used = 0;
+	mm->heap_segment_used = 0;
+	mm->stack_segment_used = 0;
+	mm->code_segment_used = 0;
 	mm->tsp = NULL;
+	mm->tsp_hugep_pmd_count = 0;
+	mm->tsp_hugep_pud_count = 0;
+	mm->tsp_coalesce_pmd_count = 0;
+	mm->tsp_coalesce_pud_count = 0;
+	mm->tsp_pmd = 0;
+	mm->tsp_pmd_merge = 0;
+	mm->tsp_pud = 0;
 #endif
 	mm_init_uprobes_state(mm);
 

@@ -535,7 +535,9 @@ struct mm_struct {
 		struct uprobes_state uprobes_state;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 		struct tsp *tsp;
-		bool tsp_pmd; /* Coalesce PMD */
+		bool tsp_pmd; /* Anonymous PMD Huge Page */
+		bool tsp_pmd_merge; /* Coalensce Anonymous PMD Huge Page */
+		bool tsp_pud; /* Anonymous PUD Huge Page */
 		bool tsp_check;
 		bool tsp_show_size;
 		bool tsp_enabled;
@@ -547,6 +549,10 @@ struct mm_struct {
 		unsigned long code_segment_used;
 		unsigned long heap_segment_used;
 		unsigned long stack_segment_used;
+		unsigned long tsp_hugep_pmd_count;
+		unsigned long tsp_hugep_pud_count;
+		unsigned long tsp_coalesce_pmd_count;
+		unsigned long tsp_coalesce_pud_count;
 #endif
 #ifdef CONFIG_HUGETLB_PAGE
 		atomic_long_t hugetlb_usage;

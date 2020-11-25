@@ -220,12 +220,16 @@ struct tsp {
         struct task_struct      *task;
         unsigned long code_segment_paddr;
         unsigned long code_segment_size;
+        unsigned long code_segment_swapped;
         unsigned long heap_segment_paddr;
         unsigned long heap_segment_size;
+        unsigned long heap_segment_swapped;
         unsigned long mmap_segment_paddr;
         unsigned long mmap_segment_size;
+        unsigned long mmap_segment_swapped;
         unsigned long stack_segment_paddr;
         unsigned long stack_segment_size;
+        unsigned long stack_segment_swapped;
 	int is_swapped;
 };
 
@@ -248,8 +252,11 @@ vm_fault_t do_tsp_huge_pud_anonymous_page(struct vm_fault *vmf);
 
 int zap_tsp_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 		 pmd_t *pmd, unsigned long addr);
-
+int zap_tsp_huge_pud(struct mmu_gather *tlb, struct vm_area_struct *vma,
+		     pud_t *pud, unsigned long addr);
 void split_tsp_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
+		unsigned long address);
+void split_tsp_huge_pud(struct vm_area_struct *vma, pud_t *pud,
 		unsigned long address);
 
 int tsp_alloc_and_create(unsigned long code_size, unsigned long heap_size,
@@ -275,7 +282,7 @@ bool move_tsp_huge_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 	} while (0)
 
 void tsp_huge_pmd_set_accessed(struct vm_fault *vmf, pmd_t orig_pmd);
-
+void tsp_huge_pud_set_accessed(struct vm_fault *vmf, pud_t orig_pud);
 
 struct page *follow_tsp_huge_pmd(struct vm_area_struct *vma,
 				   unsigned long addr,
@@ -294,6 +301,21 @@ static inline spinlock_t *pmd_tsp_huge_lock(pmd_t *pmd,
 
 int coalesce_tsp_vma(struct vm_area_struct *vma);
 int coalesce_tsp_pmd(struct vm_area_struct *vma, unsigned long address);
+int coalesce_tsp_pud(struct vm_area_struct *vma, unsigned long address);
+
+
+static inline bool tsp_pmd_huge_enabled(struct vm_area_struct *vma)
+{
+	if (!vma->vm_mm->tsp_pmd)
+		return 0;
+	if (tsp_vaddr_is_code(vma->vm_start))
+		return 0;
+	if (tsp_vaddr_is_stack(vma->vm_start))
+		return 0;
+	return 1;
+}
+
+
 
 #endif
 

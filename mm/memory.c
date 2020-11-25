@@ -1248,6 +1248,16 @@ static inline unsigned long zap_pud_range(struct mmu_gather *tlb,
 	pud = pud_offset(p4d, addr);
 	do {
 		next = pud_addr_end(addr, end);
+#ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+		if (pud_tsp_huge(*pud)) {
+			if (next - addr != TSP_HPAGE_PUD_SIZE)  {
+				split_tsp_huge_pud(vma, pud, addr);
+			}
+			else if (zap_tsp_huge_pud(tlb, vma, pud, addr))
+				goto next;
+			/* fall through */
+		}
+#endif
 		if (pud_trans_huge(*pud) || pud_devmap(*pud)) {
 			if (next - addr != HPAGE_PUD_SIZE) {
 				VM_BUG_ON_VMA(!rwsem_is_locked(&tlb->mm->mmap_sem), vma);
@@ -3411,6 +3421,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
+
 	if (is_vma_tsp_swapped(vma)) {
 		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
 				&vmf->ptl);
@@ -4407,6 +4418,34 @@ static vm_fault_t __handle_mm_fault(struct vm_area_struct *vma,
 	if (!vmf.pud)
 		return VM_FAULT_OOM;
 retry_pud:
+#if 1
+	if (is_vma_tsp_swapped(vma)) {
+		if (pud_none(*vmf.pud) && (current->mm->tsp_pud)) {
+			if (vma_is_anonymous(vmf.vma)) {
+				ret = do_tsp_huge_pud_anonymous_page(&vmf);
+				if (!(ret & VM_FAULT_FALLBACK)) {
+					return ret;
+				}
+			}
+		} else {
+			pud_t orig_pud = *vmf.pud;
+			barrier();
+			if (pud_tsp_huge(orig_pud)) {
+
+				if (dirty && !pud_write(orig_pud)) {
+					printk("not imp wp_huge_pud ========!\n");
+					//ret = wp_huge_pmd(&vmf, orig_pmd);
+					//if (!(ret & VM_FAULT_FALLBACK))
+					//	return ret;
+				} else {
+					tsp_huge_pud_set_accessed(&vmf, orig_pud);
+					return 0;
+				}
+			}
+
+		}
+	}
+#endif
 	if (pud_none(*vmf.pud) && __transparent_hugepage_enabled(vma)) {
 		ret = create_huge_pud(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
@@ -4441,7 +4480,7 @@ retry_pud:
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 #if 1
 	if (is_vma_tsp_swapped(vma)) {
-		if (pmd_none(*vmf.pmd)) {
+		if (pmd_none(*vmf.pmd) && (current->mm->tsp_pmd)) {
 			if (vma_is_anonymous(vmf.vma)) {
 				ret = do_tsp_huge_pmd_anonymous_page(&vmf);
 				if (!(ret & VM_FAULT_FALLBACK)) {
