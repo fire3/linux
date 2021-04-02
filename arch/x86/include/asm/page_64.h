@@ -43,15 +43,26 @@ extern unsigned long __phys_addr_symbol(unsigned long);
 void clear_page_orig(void *page);
 void clear_page_rep(void *page);
 void clear_page_erms(void *page);
+#ifndef __clear_page_nt
+void __clear_page_nt(void *page, u64 page_size);
+#define __clear_page_nt __clear_page_nt
+#endif  /* __clear_page_nt */
+
 
 static inline void clear_page(void *page)
 {
+#ifndef __clear_page_nt
 	alternative_call_2(clear_page_orig,
 			   clear_page_rep, X86_FEATURE_REP_GOOD,
 			   clear_page_erms, X86_FEATURE_ERMS,
 			   "=D" (page),
 			   "0" (page)
 			   : "cc", "memory", "rax", "rcx");
+#else
+	__clear_page_nt(page, PAGE_SIZE);
+	/* __clear_page_nt requrires and `sfence` barrier. */
+	wmb();
+#endif
 }
 
 void copy_page(void *to, void *from);
