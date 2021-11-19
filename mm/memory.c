@@ -5066,6 +5066,7 @@ static inline void process_huge_page(
 	}
 }
 
+#ifndef __clear_page_nt
 static void clear_gigantic_page(struct page *page,
 				unsigned long addr,
 				unsigned int pages_per_huge_page)
@@ -5080,6 +5081,7 @@ static void clear_gigantic_page(struct page *page,
 		clear_user_highpage(p, addr + i * PAGE_SIZE);
 	}
 }
+#endif
 
 static void clear_subpage(unsigned long addr, int idx, void *arg)
 {
