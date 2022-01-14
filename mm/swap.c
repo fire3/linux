@@ -42,7 +42,7 @@
 #include <trace/events/pagemap.h>
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-#include <linux/tsp.h>
+#include <linux/smm.h>
 #endif
 
 /* How many pages do we try to swap or page in/out together? */
@@ -376,9 +376,9 @@ static void __lru_cache_activate_page(struct page *page)
 void mark_page_accessed(struct page *page)
 {
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (unlikely(PageTsp(page))) {
-		if (page->tsp_buddy_page)
-			page = page->tsp_buddy_page;
+	if (unlikely(PageSmm(page))) {
+		if (page->smm_buddy_page)
+			page = page->smm_buddy_page;
 	}
 #endif
 	page = compound_head(page);
@@ -471,7 +471,7 @@ void lru_cache_add_active_or_unevictable(struct page *page,
 {
 	VM_BUG_ON_PAGE(PageLRU(page), page);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (unlikely(PageTsp(page)))
+	if (unlikely(PageSmm(page)))
 		return;
 #endif
 	if (likely((vma->vm_flags & (VM_LOCKED | VM_SPECIAL)) != VM_LOCKED))
@@ -801,12 +801,12 @@ void release_pages(struct page **pages, int nr)
 		struct page *page = pages[i];
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		if (PageTsp(page)) {
-			put_tsp_page(page);
-			if (page->tsp_buddy_page == NULL)
+		if (PageSmm(page)) {
+			put_smm_page(page);
+			if (page->smm_buddy_page == NULL)
 				continue;
-			page = page->tsp_buddy_page;
-			BUG_ON(PageTsp(page));
+			page = page->smm_buddy_page;
+			BUG_ON(PageSmm(page));
 		}
 #endif
 		/*
@@ -820,7 +820,7 @@ void release_pages(struct page **pages, int nr)
 		}
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		BUG_ON(PageTsp(page));
+		BUG_ON(PageSmm(page));
 #endif
 		if (is_huge_zero_page(page))
 			continue;

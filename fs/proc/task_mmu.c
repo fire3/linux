@@ -20,7 +20,7 @@
 #include <linux/uaccess.h>
 #include <linux/pkeys.h>
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-#include <linux/tsp.h>
+#include <linux/smm.h>
 #endif
 
 #include <asm/elf.h>
@@ -577,7 +577,7 @@ static void smaps_pmd_entry(pmd_t *pmd, unsigned long addr,
 	struct page *page;
 
 	/* FOLL_DUMP will return -EFAULT on huge zero page */
-	page = follow_tsp_huge_pmd(vma, addr, pmd, FOLL_DUMP);
+	page = follow_smm_huge_pmd(vma, addr, pmd, FOLL_DUMP);
 	if (IS_ERR_OR_NULL(page))
 		return;
 	if (PageAnon(page))
@@ -600,7 +600,7 @@ static int smaps_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 	spinlock_t *ptl;
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	ptl = pmd_tsp_huge_lock(pmd, vma);
+	ptl = pmd_smm_huge_lock(pmd, vma);
 #else
 	ptl = pmd_trans_huge_lock(pmd, vma);
 #endif

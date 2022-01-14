@@ -54,7 +54,7 @@
 #include <asm/mmu_context.h>
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-#include <linux/tsp.h>
+#include <linux/smm.h>
 #endif
 
 #define CREATE_TRACE_POINTS
@@ -1529,9 +1529,9 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 			pgoff = addr >> PAGE_SHIFT;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 #if 0
-			if (tsp_vaddr_is_mmap(addr) && is_current_tsp_swapped()) 
+			if (smm_vaddr_is_mmap(addr) && is_current_smm_swapped()) 
 				flags = flags | MAP_POPULATE;
-			if (tsp_vaddr_is_heap(addr) && is_current_tsp_swapped()) 
+			if (smm_vaddr_is_heap(addr) && is_current_smm_swapped()) 
 				flags = flags | MAP_POPULATE;
 #endif
 #endif
@@ -1610,7 +1610,7 @@ out_fput:
 	if (file)
 		fput(file);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	tsp_setup_current();
+	smm_setup_current();
 #endif
 
 	return retval;

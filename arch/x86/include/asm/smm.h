@@ -18,7 +18,7 @@
 #define TSP_SEGMENT_TOP_MMAP (TSP_SEGMENT_BASE_MMAP + TSP_SEGMENT_SIZE - 1)
 #define TSP_SEGMENT_TOP_STACK (TSP_SEGMENT_BASE_STACK + TSP_SEGMENT_SIZE - 1)
 
-static inline int tsp_vaddr_is_code(unsigned long vaddr)
+static inline int smm_vaddr_is_code(unsigned long vaddr)
 {
 	if ((vaddr >= TSP_SEGMENT_BASE_CODE) &&
 	       (vaddr <= TSP_SEGMENT_TOP_CODE))
@@ -26,7 +26,7 @@ static inline int tsp_vaddr_is_code(unsigned long vaddr)
 	return 0;
 }
 
-static inline int tsp_vaddr_is_heap(unsigned long vaddr)
+static inline int smm_vaddr_is_heap(unsigned long vaddr)
 {
 	if ((vaddr >= TSP_SEGMENT_BASE_HEAP) &&
 	       (vaddr <= TSP_SEGMENT_TOP_HEAP))
@@ -34,7 +34,7 @@ static inline int tsp_vaddr_is_heap(unsigned long vaddr)
 	return 0;
 }
 
-static inline int tsp_vaddr_is_mmap(unsigned long vaddr)
+static inline int smm_vaddr_is_mmap(unsigned long vaddr)
 {
 	if ((vaddr >= TSP_SEGMENT_BASE_MMAP) &&
 	       (vaddr <= TSP_SEGMENT_TOP_MMAP))
@@ -42,7 +42,7 @@ static inline int tsp_vaddr_is_mmap(unsigned long vaddr)
 	return 0;
 }
 
-static inline int tsp_vaddr_is_stack(unsigned long vaddr)
+static inline int smm_vaddr_is_stack(unsigned long vaddr)
 {
 	if ((vaddr >= TSP_SEGMENT_BASE_STACK) &&
 	       (vaddr <= TSP_SEGMENT_TOP_STACK))

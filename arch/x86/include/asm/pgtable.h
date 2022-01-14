@@ -257,11 +257,11 @@ static inline int pmd_large(pmd_t pte)
 }
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-static inline int pmd_tsp_huge(pmd_t pmd)
+static inline int pmd_smm_huge(pmd_t pmd)
 {
 	return (pmd_val(pmd) & (_PAGE_PSE|_PAGE_DEVMAP)) == _PAGE_PSE;
 }
-static inline int pud_tsp_huge(pud_t pud)
+static inline int pud_smm_huge(pud_t pud)
 {
 	return (pud_val(pud) & (_PAGE_PSE|_PAGE_DEVMAP)) == _PAGE_PSE;
 }

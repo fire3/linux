@@ -45,7 +45,7 @@
 #include <asm/vsyscall.h>
 #include <linux/vmalloc.h>
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-#include <linux/tsp.h>
+#include <linux/smm.h>
 #endif
 /*
  * max_low_pfn_mapped: highest directly mapped pfn < 4 GB
@@ -1163,7 +1163,7 @@ void __init setup_arch(char **cmdline_p)
 	if (boot_cpu_has(X86_FEATURE_GBPAGES))
 		hugetlb_cma_reserve(PUD_SHIFT - PAGE_SHIFT);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-                tsp_reserve(PUD_SHIFT - PAGE_SHIFT);
+                smm_reserve(PUD_SHIFT - PAGE_SHIFT);
 #endif
 
 	/*

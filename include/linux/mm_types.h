@@ -220,7 +220,7 @@ struct page {
 	int _last_cpupid;
 #endif
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	struct page *tsp_buddy_page;
+	struct page *smm_buddy_page;
 #endif
 } _struct_page_alignment;
 
@@ -534,13 +534,13 @@ struct mm_struct {
 #endif
 		struct uprobes_state uprobes_state;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		struct tsp *tsp;
-		bool tsp_pmd; /* Anonymous PMD Huge Page */
-		bool tsp_pmd_merge; /* Coalensce Anonymous PMD Huge Page */
-		bool tsp_pud; /* Anonymous PUD Huge Page */
-		bool tsp_check;
-		bool tsp_show_size;
-		bool tsp_enabled;
+		struct smm *smm;
+		bool smm_pmd; /* Anonymous PMD Huge Page */
+		bool smm_pmd_merge; /* Coalensce Anonymous PMD Huge Page */
+		bool smm_pud; /* Anonymous PUD Huge Page */
+		bool smm_check;
+		bool smm_show_size;
+		bool smm_enabled;
 		unsigned long mmap_segment_env;
 		unsigned long code_segment_env;
 		unsigned long heap_segment_env;
@@ -549,10 +549,10 @@ struct mm_struct {
 		unsigned long code_segment_used;
 		unsigned long heap_segment_used;
 		unsigned long stack_segment_used;
-		unsigned long tsp_hugep_pmd_count;
-		unsigned long tsp_hugep_pud_count;
-		unsigned long tsp_coalesce_pmd_count;
-		unsigned long tsp_coalesce_pud_count;
+		unsigned long smm_hugep_pmd_count;
+		unsigned long smm_hugep_pud_count;
+		unsigned long smm_coalesce_pmd_count;
+		unsigned long smm_coalesce_pud_count;
 #endif
 #ifdef CONFIG_HUGETLB_PAGE
 		atomic_long_t hugetlb_usage;

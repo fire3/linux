@@ -3115,7 +3115,7 @@ void free_unref_page(struct page *page)
 	unsigned long pfn = page_to_pfn(page);
 	
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	BUG_ON(PageTsp(page));
+	BUG_ON(PageSmm(page));
 #endif
 	if (!free_unref_page_prepare(page, pfn))
 		return;
@@ -4871,7 +4871,7 @@ EXPORT_SYMBOL(get_zeroed_page);
 static inline void free_the_page(struct page *page, unsigned int order)
 {
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (unlikely(PageTsp(page)))
+	if (unlikely(PageSmm(page)))
 		return;
 #endif
 	if (order == 0)		/* Via pcp? */

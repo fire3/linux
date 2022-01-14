@@ -47,7 +47,7 @@
 #include <asm/page.h>
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-#include <linux/tsp.h>
+#include <linux/smm.h>
 #endif
 
 #ifndef user_long_t
@@ -1116,7 +1116,7 @@ out_free_interp:
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 	if (elf_ex->e_flags == 0x10) {
-		mm->tsp_enabled = 1;
+		mm->smm_enabled = 1;
 	}
 #endif
 	if ((current->flags & PF_RANDOMIZE) && (randomize_va_space > 1)) {

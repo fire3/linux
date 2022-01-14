@@ -85,7 +85,7 @@
 #include "internal.h"
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-#include <linux/tsp.h>
+#include <linux/smm.h>
 #endif
 
 #if defined(LAST_CPUPID_NOT_IN_PAGE_FLAGS) && !defined(CONFIG_COMPILE_TEST)
@@ -781,7 +781,7 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	 * in the parent and the child
 	 */
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (!is_current_tsp_swapped()) {
+	if (!is_current_smm_swapped()) {
 		ptep_set_wrprotect(src_mm, addr, src_pte);
 		pte = pte_wrprotect(pte);
 	} else {
@@ -1211,11 +1211,11 @@ static inline unsigned long zap_pmd_range(struct mmu_gather *tlb,
 			/* fall through */
 		}
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		if (pmd_tsp_huge(*pmd)) {
+		if (pmd_smm_huge(*pmd)) {
 			if (next - addr != TSP_HPAGE_PMD_SIZE)  {
-				split_tsp_huge_pmd(vma, pmd, addr);
+				split_smm_huge_pmd(vma, pmd, addr);
 			}
-			else if (zap_tsp_huge_pmd(tlb, vma, pmd, addr))
+			else if (zap_smm_huge_pmd(tlb, vma, pmd, addr))
 				goto next;
 			/* fall through */
 		}
@@ -1249,11 +1249,11 @@ static inline unsigned long zap_pud_range(struct mmu_gather *tlb,
 	do {
 		next = pud_addr_end(addr, end);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		if (pud_tsp_huge(*pud)) {
+		if (pud_smm_huge(*pud)) {
 			if (next - addr != TSP_HPAGE_PUD_SIZE)  {
-				split_tsp_huge_pud(vma, pud, addr);
+				split_smm_huge_pud(vma, pud, addr);
 			}
-			else if (zap_tsp_huge_pud(tlb, vma, pud, addr))
+			else if (zap_smm_huge_pud(tlb, vma, pud, addr))
 				goto next;
 			/* fall through */
 		}
@@ -2768,14 +2768,14 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 		 * new page to be mapped directly into the secondary page table.
 		 */
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		if (is_vma_tsp_swapped(vma)) {
-			struct page *tsp_page;
-			unsigned long tsp_paddr = tsp_vaddr_to_paddr(vma->vm_mm->tsp, 
+		if (is_vma_smm_swapped(vma)) {
+			struct page *smm_page;
+			unsigned long smm_paddr = smm_vaddr_to_paddr(vma->vm_mm->smm, 
 				vmf->address & PAGE_MASK);
-			tsp_page =  pfn_to_page(tsp_paddr >> PAGE_SHIFT);
-			dup_tsp_page(new_page, tsp_page);
-			tsp_page->tsp_buddy_page = NULL;
-			entry = mk_pte(tsp_page, vma->vm_page_prot);
+			smm_page =  pfn_to_page(smm_paddr >> PAGE_SHIFT);
+			dup_smm_page(new_page, smm_page);
+			smm_page->smm_buddy_page = NULL;
+			entry = mk_pte(smm_page, vma->vm_page_prot);
 			entry = maybe_mkwrite(pte_mkdirty(entry), vma);
 			page_remove_rmap(new_page, false);
 			put_page(new_page);
@@ -3422,17 +3422,17 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		goto oom;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 
-	if (is_vma_tsp_swapped(vma)) {
+	if (is_vma_smm_swapped(vma)) {
 		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
 				&vmf->ptl);
 		if (!pte_none(*vmf->pte)) {
 			pte_unmap_unlock(vmf->pte, vmf->ptl);
 			return ret;
 		}
-		page = alloc_zeroed_tsp_page(vma, vmf->address);
+		page = alloc_zeroed_smm_page(vma, vmf->address);
 	} else {
 		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-		BUG_ON(PageTsp(page));
+		BUG_ON(PageSmm(page));
 	}
 #else
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
@@ -3456,7 +3456,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		entry = pte_mkwrite(pte_mkdirty(entry));
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (!is_vma_tsp_swapped(vma)) {
+	if (!is_vma_smm_swapped(vma)) {
 		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
 				&vmf->ptl);
 		if (!pte_none(*vmf->pte))
@@ -3496,7 +3496,7 @@ unlock:
 release:
 	mem_cgroup_cancel_charge(page, memcg, false);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (!is_vma_tsp_swapped(vma) && !PageTsp(page))
+	if (!is_vma_smm_swapped(vma) && !PageSmm(page))
 #endif
 	put_page(page);
 	goto unlock;
@@ -3758,33 +3758,33 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct mem_cgroup *memcg,
 	}
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (is_vma_tsp_swapped(vma))
+	if (is_vma_smm_swapped(vma))
 	{
-		unsigned long tsp_paddr = tsp_vaddr_to_paddr(vma->vm_mm->tsp, 
+		unsigned long smm_paddr = smm_vaddr_to_paddr(vma->vm_mm->smm, 
 				vmf->address);
 		pgprot_t old_prot;
 		pte_t old_entry = entry;
-		VM_BUG_ON_PAGE(PageTsp(page), page);
-		if (tsp_paddr == 0)
+		VM_BUG_ON_PAGE(PageSmm(page), page);
+		if (smm_paddr == 0)
 			goto conti;
-		if (pfn_to_page(tsp_paddr >> PAGE_SHIFT) == page) {
+		if (pfn_to_page(smm_paddr >> PAGE_SHIFT) == page) {
 			printk("alloc_set_pte: same [%s %d] addr:%#lx  %#lx -> %#lx\n",
 				current->comm, current->pid,
 				vmf->address, page_to_pfn(page) << PAGE_SHIFT,
-				tsp_paddr);
+				smm_paddr);
 			goto conti;
 		}
-		copy_page((void *)__va(tsp_paddr),
+		copy_page((void *)__va(smm_paddr),
 				(void *)__va(page_to_pfn(page) << PAGE_SHIFT));
 
-		dup_tsp_page(page, pfn_to_page(tsp_paddr >> PAGE_SHIFT));
+		dup_smm_page(page, pfn_to_page(smm_paddr >> PAGE_SHIFT));
 		old_prot = pte_pgprot(old_entry);
-		entry = pfn_pte(tsp_paddr >> PAGE_SHIFT, old_prot);
+		entry = pfn_pte(smm_paddr >> PAGE_SHIFT, old_prot);
 #if 0
 		printk("alloc_set_pte: [%s %d] addr:%#lx  %#lx -> %#lx\n",
 				current->comm, current->pid,
 				vmf->address, page_to_pfn(page) << PAGE_SHIFT,
-				tsp_paddr);
+				smm_paddr);
 #endif
 	}
 conti:
@@ -4419,10 +4419,10 @@ static vm_fault_t __handle_mm_fault(struct vm_area_struct *vma,
 		return VM_FAULT_OOM;
 retry_pud:
 #if 1
-	if (is_vma_tsp_swapped(vma)) {
-		if (pud_none(*vmf.pud) && (current->mm->tsp_pud)) {
+	if (is_vma_smm_swapped(vma)) {
+		if (pud_none(*vmf.pud) && (current->mm->smm_pud)) {
 			if (vma_is_anonymous(vmf.vma)) {
-				ret = do_tsp_huge_pud_anonymous_page(&vmf);
+				ret = do_smm_huge_pud_anonymous_page(&vmf);
 				if (!(ret & VM_FAULT_FALLBACK)) {
 					return ret;
 				}
@@ -4430,7 +4430,7 @@ retry_pud:
 		} else {
 			pud_t orig_pud = *vmf.pud;
 			barrier();
-			if (pud_tsp_huge(orig_pud)) {
+			if (pud_smm_huge(orig_pud)) {
 
 				if (dirty && !pud_write(orig_pud)) {
 					printk("not imp wp_huge_pud ========!\n");
@@ -4438,7 +4438,7 @@ retry_pud:
 					//if (!(ret & VM_FAULT_FALLBACK))
 					//	return ret;
 				} else {
-					tsp_huge_pud_set_accessed(&vmf, orig_pud);
+					smm_huge_pud_set_accessed(&vmf, orig_pud);
 					return 0;
 				}
 			}
@@ -4479,10 +4479,10 @@ retry_pud:
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
 #if 1
-	if (is_vma_tsp_swapped(vma)) {
-		if (pmd_none(*vmf.pmd) && (current->mm->tsp_pmd)) {
+	if (is_vma_smm_swapped(vma)) {
+		if (pmd_none(*vmf.pmd) && (current->mm->smm_pmd)) {
 			if (vma_is_anonymous(vmf.vma)) {
-				ret = do_tsp_huge_pmd_anonymous_page(&vmf);
+				ret = do_smm_huge_pmd_anonymous_page(&vmf);
 				if (!(ret & VM_FAULT_FALLBACK)) {
 					return ret;
 				}
@@ -4490,7 +4490,7 @@ retry_pud:
 		} else {
 			pmd_t orig_pmd = *vmf.pmd;
 			barrier();
-			if (pmd_tsp_huge(orig_pmd)) {
+			if (pmd_smm_huge(orig_pmd)) {
 
 				if (dirty && !pmd_write(orig_pmd)) {
 					printk("not imp wp_huge_pmd ========!\n");
@@ -4498,7 +4498,7 @@ retry_pud:
 					//if (!(ret & VM_FAULT_FALLBACK))
 					//	return ret;
 				} else {
-					tsp_huge_pmd_set_accessed(&vmf, orig_pmd);
+					smm_huge_pmd_set_accessed(&vmf, orig_pmd);
 					return 0;
 				}
 			}

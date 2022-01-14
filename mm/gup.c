@@ -24,7 +24,7 @@
 
 #include "internal.h"
 
-#include <linux/tsp.h>
+#include <linux/smm.h>
 
 struct follow_page_context {
 	struct dev_pagemap *pgmap;
@@ -600,7 +600,7 @@ retry:
 			return page;
 	}
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (likely(!pmd_tsp_huge(pmdval)))
+	if (likely(!pmd_smm_huge(pmdval)))
 		return follow_page_pte(vma, address, pmd, flags, &ctx->pgmap);
 #else
 	if (likely(!pmd_trans_huge(pmdval)))
@@ -624,7 +624,7 @@ retry_locked:
 		goto retry_locked;
 	}
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (unlikely(!pmd_tsp_huge(*pmd))) {
+	if (unlikely(!pmd_smm_huge(*pmd))) {
 		spin_unlock(ptl);
 		return follow_page_pte(vma, address, pmd, flags, &ctx->pgmap);
 	}
@@ -665,7 +665,7 @@ retry_locked:
 			follow_page_pte(vma, address, pmd, flags, &ctx->pgmap);
 	}
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	page = follow_tsp_huge_pmd(vma, address, pmd, flags);
+	page = follow_smm_huge_pmd(vma, address, pmd, flags);
 #else
 	page = follow_trans_huge_pmd(vma, address, pmd, flags);
 #endif

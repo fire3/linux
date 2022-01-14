@@ -32,7 +32,7 @@
 #include <asm/pgtable_areas.h>		/* VMALLOC_START, ...		*/
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-#include <linux/tsp.h>
+#include <linux/smm.h>
 #endif
 
 #define CREATE_TRACE_POINTS
@@ -1489,10 +1489,10 @@ good_area:
 
 	up_read(&mm->mmap_sem);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (is_vma_tsp_swapped(vma) && (mm->tsp_pmd_merge))
-		coalesce_tsp_pmd(vma, address & TSP_HPAGE_PMD_MASK);
-	//if (is_vma_tsp_swapped(vma) && (mm->tsp_pud))
-	//	coalesce_tsp_pud(vma, address & TSP_HPAGE_PUD_MASK);
+	if (is_vma_smm_swapped(vma) && (mm->smm_pmd_merge))
+		coalesce_smm_pmd(vma, address & TSP_HPAGE_PMD_MASK);
+	//if (is_vma_smm_swapped(vma) && (mm->smm_pud))
+	//	coalesce_smm_pud(vma, address & TSP_HPAGE_PUD_MASK);
 #endif
 	if (unlikely(fault & VM_FAULT_ERROR)) {
 		mm_fault_error(regs, hw_error_code, address, fault);

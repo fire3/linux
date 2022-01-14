@@ -188,9 +188,9 @@ static inline void page_dup_rmap(struct page *page, bool compound)
 {
 	atomic_inc(compound ? compound_mapcount_ptr(page) : &page->_mapcount);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (unlikely(PageTsp(page))) {
-		if (page->tsp_buddy_page)
-			atomic_inc(&(page->tsp_buddy_page->_mapcount));
+	if (unlikely(PageSmm(page))) {
+		if (page->smm_buddy_page)
+			atomic_inc(&(page->smm_buddy_page->_mapcount));
 	}
 #endif
 }

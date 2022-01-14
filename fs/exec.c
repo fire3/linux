@@ -1901,15 +1901,15 @@ static int __do_execve_file(int fd, struct filename *filename,
 				if (strncmp(buf, "TSP_STACK", 9) == 0)
 					current->mm->stack_segment_env = memparse((char *)(buf+10), NULL);
 				if (strncmp(buf, "TSP_CHECK", 9) == 0)
-					current->mm->tsp_check = 1;
+					current->mm->smm_check = 1;
 				if (strncmp(buf, "TSP_SHOW", 8) == 0)
-					current->mm->tsp_show_size = 1;
+					current->mm->smm_show_size = 1;
 				if (strncmp(buf, "TSP_PMD", 7) == 0)
-					current->mm->tsp_pmd = 1;
+					current->mm->smm_pmd = 1;
 				if (strncmp(buf, "TSP_PUD", 7) == 0)
-					current->mm->tsp_pud = 1;
+					current->mm->smm_pud = 1;
 				if (strncmp(buf, "TSP_MERGE_PMD", 13) == 0)
-					current->mm->tsp_pmd_merge = 1;
+					current->mm->smm_pmd_merge = 1;
 				p += len;
 			}
 		}

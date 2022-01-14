@@ -752,7 +752,7 @@ pmd_t *mm_find_pmd(struct mm_struct *mm, unsigned long address)
 	if (!pmd_present(pmde) || pmd_trans_huge(pmde))
 		pmd = NULL;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (pmd_tsp_huge(pmde))
+	if (pmd_smm_huge(pmde))
 		pmd = NULL;
 #endif
 out:
@@ -1200,11 +1200,11 @@ void page_add_file_rmap(struct page *page, bool compound)
 {
 	int i, nr = 1;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (unlikely(PageTsp(page))) {
+	if (unlikely(PageSmm(page))) {
 		atomic_inc(&page->_mapcount);
-		if (page->tsp_buddy_page == NULL)
+		if (page->smm_buddy_page == NULL)
 			return;
-		page = page->tsp_buddy_page;
+		page = page->smm_buddy_page;
 	}
 #endif
 	VM_BUG_ON_PAGE(compound && !PageTransHuge(page), page);
@@ -1241,11 +1241,11 @@ static void page_remove_file_rmap(struct page *page, bool compound)
 	int i, nr = 1;
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (unlikely(PageTsp(page))) {
+	if (unlikely(PageSmm(page))) {
 		atomic_dec(&page->_mapcount);
-		if (page->tsp_buddy_page == NULL)
+		if (page->smm_buddy_page == NULL)
 			return;
-		page = page->tsp_buddy_page;
+		page = page->smm_buddy_page;
 	}
 #endif
 	VM_BUG_ON_PAGE(compound && !PageHead(page), page);
@@ -1342,11 +1342,11 @@ static void page_remove_anon_compound_rmap(struct page *page)
 void page_remove_rmap(struct page *page, bool compound)
 {
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	if (unlikely(PageTsp(page))) {
+	if (unlikely(PageSmm(page))) {
 		atomic_dec(&page->_mapcount);
-		if (page->tsp_buddy_page == NULL)
+		if (page->smm_buddy_page == NULL)
 			return;
-		page = page->tsp_buddy_page;
+		page = page->smm_buddy_page;
 	}
 #endif
 	if (!PageAnon(page))

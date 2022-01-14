@@ -1034,7 +1034,7 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm->pmd_huge_pte = NULL;
 #endif
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	mm->tsp_enabled = 0;
+	mm->smm_enabled = 0;
 	mm->mmap_segment_env = 0;
 	mm->heap_segment_env = 0;
 	mm->stack_segment_env = 0;
@@ -1043,14 +1043,14 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm->heap_segment_used = 0;
 	mm->stack_segment_used = 0;
 	mm->code_segment_used = 0;
-	mm->tsp = NULL;
-	mm->tsp_hugep_pmd_count = 0;
-	mm->tsp_hugep_pud_count = 0;
-	mm->tsp_coalesce_pmd_count = 0;
-	mm->tsp_coalesce_pud_count = 0;
-	mm->tsp_pmd = 0;
-	mm->tsp_pmd_merge = 0;
-	mm->tsp_pud = 0;
+	mm->smm = NULL;
+	mm->smm_hugep_pmd_count = 0;
+	mm->smm_hugep_pud_count = 0;
+	mm->smm_coalesce_pmd_count = 0;
+	mm->smm_coalesce_pud_count = 0;
+	mm->smm_pmd = 0;
+	mm->smm_pmd_merge = 0;
+	mm->smm_pud = 0;
 #endif
 	mm_init_uprobes_state(mm);
 

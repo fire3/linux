@@ -30,7 +30,7 @@
 
 #include "internal.h"
 
-#include <linux/tsp.h>
+#include <linux/smm.h>
 
 static pmd_t *get_old_pmd(struct mm_struct *mm, unsigned long addr)
 {
@@ -180,21 +180,21 @@ static void move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 		pte = move_pte(pte, new_vma->vm_page_prot, old_addr, new_addr);
 		pte = move_soft_dirty_pte(pte);
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		if (is_current_tsp_swapped())
+		if (is_current_smm_swapped())
 		{
 			unsigned long ptepfn = pte_pfn(pte);
 			struct page *pte_page = pte_page(pte); 
-			struct page *tsp_page;
-			unsigned long tsp_paddr = tsp_vaddr_to_paddr(vma->vm_mm->tsp, new_addr);
+			struct page *smm_page;
+			unsigned long smm_paddr = smm_vaddr_to_paddr(vma->vm_mm->smm, new_addr);
 			pgprot_t old_prot = pte_pgprot(pte);
 
-			copy_page(__va(tsp_paddr), __va(ptepfn << PAGE_SHIFT));
-			pte = pfn_pte(tsp_paddr >> PAGE_SHIFT, old_prot);
+			copy_page(__va(smm_paddr), __va(ptepfn << PAGE_SHIFT));
+			pte = pfn_pte(smm_paddr >> PAGE_SHIFT, old_prot);
 
-			tsp_page = pfn_to_page(tsp_paddr >> PAGE_SHIFT);
+			smm_page = pfn_to_page(smm_paddr >> PAGE_SHIFT);
 
-			dup_tsp_page(pte_page, tsp_page);
-			tsp_page->tsp_buddy_page = pte_page->tsp_buddy_page;
+			dup_smm_page(pte_page, smm_page);
+			smm_page->smm_buddy_page = pte_page->smm_buddy_page;
 		}
 #endif
 
@@ -288,21 +288,21 @@ unsigned long move_page_tables(struct vm_area_struct *vma,
 		if (!new_pmd)
 			break;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-		if (is_current_tsp_swapped() && pmd_tsp_huge(*old_pmd)) {
+		if (is_current_smm_swapped() && pmd_smm_huge(*old_pmd)) {
 			if (extent == TSP_HPAGE_PMD_SIZE) {
 				bool moved;
 				/* See comment in move_ptes() */
 				if (need_rmap_locks)
 					take_rmap_locks(vma);
 
-				moved = move_tsp_huge_pmd(vma, old_addr, new_addr,
+				moved = move_smm_huge_pmd(vma, old_addr, new_addr,
 						    old_end, old_pmd, new_pmd);
 				if (need_rmap_locks)
 					drop_rmap_locks(vma);
 				if (moved)
 					continue;
 			}
-			split_tsp_huge_pmd(vma, old_pmd, old_addr);
+			split_smm_huge_pmd(vma, old_pmd, old_addr);
 		}
 #endif
 		if (is_swap_pmd(*old_pmd) || pmd_trans_huge(*old_pmd)) {

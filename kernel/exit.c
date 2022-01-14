@@ -70,7 +70,7 @@
 #include <asm/mmu_context.h>
 
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-#include <linux/tsp.h>
+#include <linux/smm.h>
 #endif
 
 static void __unhash_process(struct task_struct *p, bool group_dead)
@@ -440,7 +440,7 @@ static void exit_mm(void)
 	if (!mm)
 		return;
 #ifdef CONFIG_TRANSPARENT_SEGMENTPAGE
-	tsp_exit_dump();
+	smm_exit_dump();
 #endif
 	sync_mm_rss(mm);
 	/*

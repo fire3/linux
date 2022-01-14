@@ -893,11 +893,11 @@ static inline unsigned long my_zero_pfn(unsigned long addr)
 
 #ifdef CONFIG_MMU
 #ifndef CONFIG_TRANSPARENT_SEGMENTPAGE
-static inline int pmd_tsp_huge(pmd_t pmd)
+static inline int pmd_smm_huge(pmd_t pmd)
 {
 	return 0;
 }
-static inline int pud_tsp_huge(pud_t pud)
+static inline int pud_smm_huge(pud_t pud)
 {
 	return 0;
 }
