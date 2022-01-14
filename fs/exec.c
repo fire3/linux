@@ -1892,23 +1892,23 @@ static int __do_execve_file(int fd, struct filename *filename,
 				int len, ret;
 				len = strnlen_user((void __user *)p, MAX_ARG_STRLEN);
 				ret = strncpy_from_user(buf,  (char __user *)p, len);
-				if (strncmp(buf, "TSP_CODE", 8) == 0)
+				if (strncmp(buf, "SMM_CODE", 8) == 0)
 					current->mm->code_segment_env = memparse((char *)(buf+9), NULL);
-				if (strncmp(buf, "TSP_HEAP", 8) == 0)
+				if (strncmp(buf, "SMM_HEAP", 8) == 0)
 					current->mm->heap_segment_env = memparse((char *)(buf+9), NULL);
-				if (strncmp(buf, "TSP_MMAP", 8) == 0)
+				if (strncmp(buf, "SMM_MMAP", 8) == 0)
 					current->mm->mmap_segment_env = memparse((char *)(buf+9), NULL);
-				if (strncmp(buf, "TSP_STACK", 9) == 0)
+				if (strncmp(buf, "SMM_STACK", 9) == 0)
 					current->mm->stack_segment_env = memparse((char *)(buf+10), NULL);
-				if (strncmp(buf, "TSP_CHECK", 9) == 0)
+				if (strncmp(buf, "SMM_CHECK", 9) == 0)
 					current->mm->smm_check = 1;
-				if (strncmp(buf, "TSP_SHOW", 8) == 0)
+				if (strncmp(buf, "SMM_SHOW", 8) == 0)
 					current->mm->smm_show_size = 1;
-				if (strncmp(buf, "TSP_PMD", 7) == 0)
+				if (strncmp(buf, "SMM_PMD", 7) == 0)
 					current->mm->smm_pmd = 1;
-				if (strncmp(buf, "TSP_PUD", 7) == 0)
+				if (strncmp(buf, "SMM_PUD", 7) == 0)
 					current->mm->smm_pud = 1;
-				if (strncmp(buf, "TSP_MERGE_PMD", 13) == 0)
+				if (strncmp(buf, "SMM_MERGE_PMD", 13) == 0)
 					current->mm->smm_pmd_merge = 1;
 				p += len;
 			}
