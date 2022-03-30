@@ -385,6 +385,15 @@ config NOMMU_INITIAL_TRIM_EXCESS
 
 	  See Documentation/admin-guide/mm/nommu-mmap.rst for more information.
 
+config SMM
+	bool "Segmented Memory Mappings Support"
+	depends on HAVE_ARCH_SMM
+	help
+	  SMM allows the kernel to use contiguous segmented memory mappings for SMM
+          enabled hardware.
+         
+          If unsure, say N.
+	
 config TRANSPARENT_HUGEPAGE
 	bool "Transparent Hugepage Support"
 	depends on HAVE_ARCH_TRANSPARENT_HUGEPAGE
