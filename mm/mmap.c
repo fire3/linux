@@ -2606,7 +2606,18 @@ find_extend_vma(struct mm_struct *mm, unsigned long addr)
 #else
 int expand_stack(struct vm_area_struct *vma, unsigned long address)
 {
+#ifdef CONFIG_SMM
+        int ret;
+
+	ret = expand_downwards(vma, address);
+	if (!ret && vma->vm_mm->smm_stack_base_pfn) {
+		vma->vm_mm->smm_stack_base_va = address;
+		vma->vm_mm->smm_stack_end_va = vma->vm_end;
+	}
+	return ret;
+#else
 	return expand_downwards(vma, address);
+#endif
 }
 
 struct vm_area_struct *

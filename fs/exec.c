@@ -73,7 +73,9 @@
 #include "internal.h"
 
 #include <trace/events/sched.h>
-
+#ifdef CONFIG_SMM
+#include <linux/cma.h>
+#endif
 static int bprm_creds_from_file(struct linux_binprm *bprm);
 
 int suid_dumpable = 0;
@@ -272,7 +274,11 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	vma->vm_start = vma->vm_end - PAGE_SIZE;
 	vma->vm_flags = VM_SOFTDIRTY | VM_STACK_FLAGS | VM_STACK_INCOMPLETE_SETUP;
 	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
-
+#ifdef CONFIG_SMM
+	vma->vm_flags = vma->vm_flags | VM_SMM_STACK;
+	mm->smm_stack_base_va = vma->vm_start;
+	mm->smm_stack_end_va = vma->vm_end;
+#endif
 	err = insert_vm_struct(mm, vma);
 	if (err)
 		goto err;
@@ -379,6 +385,13 @@ static int bprm_mm_init(struct linux_binprm *bprm)
 	if (err)
 		goto err;
 
+#ifdef CONFIG_SMM
+	if (bprm->rlim_stack.rlim_cur < SMM_STACK_SIZE_LIMIT) {
+		smm_cma_reserve_stack(bprm->rlim_stack.rlim_cur, mm);
+	} else {
+		smm_cma_reserve_stack(SMM_STACK_SIZE_LIMIT, mm);
+	}
+#endif
 	return 0;
 
 err:
@@ -794,6 +807,9 @@ int setup_arg_pages(struct linux_binprm *bprm,
 
 	vm_flags = VM_STACK_FLAGS;
 
+#ifdef CONFIG_SMM
+        vm_flags = vm_flags | VM_SMM_STACK;
+#endif
 	/*
 	 * Adjust stack execute permissions; explicitly enable for
 	 * EXSTACK_ENABLE_X, disable for EXSTACK_DISABLE_X and leave alone

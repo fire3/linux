@@ -32,6 +32,10 @@
 #include <linux/sched.h>
 #include <linux/pgtable.h>
 
+#ifdef CONFIG_SMM
+#include <linux/smm.h>
+#endif
+
 struct mempolicy;
 struct anon_vma;
 struct anon_vma_chain;
@@ -130,6 +134,10 @@ extern int mmap_rnd_compat_bits __read_mostly;
  * s390 does this to prevent multiplexing of hardware bits
  * related to the physical page in case of virtualization.
  */
+#ifdef CONFIG_SMM
+#define mm_forbids_zeropage(X)	(1)
+#endif
+
 #ifndef mm_forbids_zeropage
 #define mm_forbids_zeropage(X)	(0)
 #endif
@@ -310,6 +318,22 @@ extern unsigned int kobjsize(const void *objp);
 #define VM_HIGH_ARCH_3	BIT(VM_HIGH_ARCH_BIT_3)
 #define VM_HIGH_ARCH_4	BIT(VM_HIGH_ARCH_BIT_4)
 #endif /* CONFIG_ARCH_USES_HIGH_VMA_FLAGS */
+
+#ifdef CONFIG_SMM
+#define VM_HIGH_ARCH_BIT_5  40
+#define VM_HIGH_ARCH_5	BIT(VM_HIGH_ARCH_BIT_5)
+#define VM_HIGH_ARCH_BIT_6  41
+#define VM_HIGH_ARCH_6	BIT(VM_HIGH_ARCH_BIT_6)
+#define VM_HIGH_ARCH_BIT_7  42
+#define VM_HIGH_ARCH_7	BIT(VM_HIGH_ARCH_BIT_7)
+#define VM_HIGH_ARCH_BIT_8  43
+#define VM_HIGH_ARCH_8	BIT(VM_HIGH_ARCH_BIT_8)
+
+#define VM_SMM_CODE  VM_HIGH_ARCH_5
+#define VM_SMM_HEAP  VM_HIGH_ARCH_6
+#define VM_SMM_STACK VM_HIGH_ARCH_7
+#define VM_SMM_MMAP  VM_HIGH_ARCH_8
+#endif
 
 #ifdef CONFIG_ARCH_HAS_PKEYS
 # define VM_PKEY_SHIFT	VM_HIGH_ARCH_BIT_0

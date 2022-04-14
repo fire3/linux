@@ -388,6 +388,7 @@ config NOMMU_INITIAL_TRIM_EXCESS
 config SMM
 	bool "Segmented Memory Mappings Support"
 	depends on HAVE_ARCH_SMM
+	select CMA
 	help
 	  SMM allows the kernel to use contiguous segmented memory mappings for SMM
           enabled hardware.

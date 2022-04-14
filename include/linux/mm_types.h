@@ -385,6 +385,22 @@ struct core_state {
 };
 
 struct kioctx_table;
+
+#ifdef CONFIG_SMM
+struct smm_slb {
+	unsigned long va_base;
+	unsigned long size;
+	unsigned long pa_offset;  /* va + pa_offset = pa */
+        int activate;
+};
+#define SMM_SLB_ENTRY_SIZE 4
+
+#define SMM_SLB_ENTRY_CODE 0
+#define SMM_SLB_ENTRY_HEAP 1
+#define SMM_SLB_ENTRY_MMAP 2
+#define SMM_SLB_ENTRY_STACK 3
+#endif
+
 struct mm_struct {
 	struct {
 		struct vm_area_struct *mmap;		/* list of VMAs */
@@ -394,6 +410,24 @@ struct mm_struct {
 		unsigned long (*get_unmapped_area) (struct file *filp,
 				unsigned long addr, unsigned long len,
 				unsigned long pgoff, unsigned long flags);
+#endif
+#ifdef CONFIG_SMM
+		struct smm_slb smm_slb[SMM_SLB_ENTRY_SIZE];
+		unsigned long smm_stack_base_va;
+		unsigned long smm_stack_end_va;
+		unsigned long smm_stack_base_pfn;
+		unsigned long smm_heap_base_va;
+		unsigned long smm_heap_end_va;
+		unsigned long smm_heap_base_pfn;
+		unsigned long smm_code_base_va;
+		unsigned long smm_code_base_pfn;
+		unsigned long smm_mmap_base_va;
+		unsigned long smm_mmap_base_pfn;
+
+                unsigned long smm_stack_page_count;
+                unsigned long smm_code_page_count;
+                unsigned long smm_heap_page_count;
+                unsigned long smm_mmap_page_count;
 #endif
 		unsigned long mmap_base;	/* base of mmap area */
 		unsigned long mmap_legacy_base;	/* base of mmap area in bottom-up allocations */

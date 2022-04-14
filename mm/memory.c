@@ -3519,7 +3519,26 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	/* Allocate our own private page. */
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
+#ifdef CONFIG_SMM
+	if (vma->vm_flags & VM_SMM_STACK) {
+		unsigned long pfn;
+		int ret;
+		pfn = smm_stack_va_to_pa(vma->vm_mm, vmf->address) >> PAGE_SHIFT;
+		if (pfn != 0) {
+			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+			if (ret == 0) {
+				//printk("do_anonymous_page: [%s %d], [%#lx] pfn: %#lx\n",current->comm, current->pid, vmf->address, pfn);
+				page = pfn_to_page(pfn);
+			} else {
+				page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+			}
+		}
+	} else {
+		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+	}
+#else
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+#endif
 	if (!page)
 		goto oom;
 

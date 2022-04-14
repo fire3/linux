@@ -398,6 +398,78 @@ static void cma_debug_show_areas(struct cma *cma)
 static inline void cma_debug_show_areas(struct cma *cma) { }
 #endif
 
+
+#ifdef CONFIG_SMM
+/**
+ * cma_reserve() - allocate pages from contiguous area
+ * @cma:   Contiguous memory region for which the allocation is performed.
+ * @count: Requested number of pages.
+ * @align: Requested alignment of pages (in PAGE_SIZE order).
+ *
+ * This function reserve part of contiguous memory on specific
+ * contiguous memory area.
+ */
+
+unsigned long cma_reserve(struct cma *cma, size_t count, unsigned int align)
+{
+	unsigned long mask, offset;
+	unsigned long pfn = -1;
+	unsigned long start = 0;
+	unsigned long bitmap_maxno, bitmap_no, bitmap_count;
+
+	if (!cma || !cma->count || !cma->bitmap)
+		return 0;
+
+	if (!count)
+		return 0;
+
+	mask = cma_bitmap_aligned_mask(cma, align);
+	offset = cma_bitmap_aligned_offset(cma, align);
+	bitmap_maxno = cma_bitmap_maxno(cma);
+	bitmap_count = cma_bitmap_pages_to_bits(cma, count);
+
+	if (bitmap_count > bitmap_maxno)
+		return 0;
+
+	mutex_lock(&cma->lock);
+	bitmap_no = bitmap_find_next_zero_area_off(cma->bitmap,
+			bitmap_maxno, start, bitmap_count, mask,
+			offset);
+	if (bitmap_no >= bitmap_maxno) {
+		mutex_unlock(&cma->lock);
+		return 0;
+	}
+	bitmap_set(cma->bitmap, bitmap_no, bitmap_count);
+	/*
+	 * It's safe to drop the lock here. We've marked this region for
+	 * our exclusive use. If the migration fails we will take the
+	 * lock again and unmark it.
+	 */
+	mutex_unlock(&cma->lock);
+
+	pfn = cma->base_pfn + (bitmap_no << cma->order_per_bit);
+
+	return pfn;
+}
+
+bool cma_cancel(struct cma *cma, unsigned long pfn, unsigned int count)
+{
+	if (!cma)
+		return false;
+
+
+	if (pfn < cma->base_pfn || pfn >= cma->base_pfn + cma->count)
+		return false;
+
+	VM_BUG_ON(pfn + count > cma->base_pfn + cma->count);
+
+	// cma->lock should not be hold here.
+	cma_clear_bitmap(cma, pfn, count);
+
+	return true;
+}
+#endif
+
 /**
  * cma_alloc() - allocate pages from contiguous area
  * @cma:   Contiguous memory region for which the allocation is performed.
