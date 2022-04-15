@@ -52,6 +52,14 @@
 static unsigned long smm_reserve_size __initdata;
 static bool smm_reserve_called __initdata;
 
+#define smm_dbg(fmt, ...)                                                      \
+	do {                                                                   \
+		if (smm_debug)                                                 \
+			pr_info(fmt, ##__VA_ARGS__);                           \
+	} while (0)
+
+static int smm_debug = 1;
+
 static int __init cmdline_parse_smm_reserve(char *p)
 {
 	smm_reserve_size = memparse(p, &p);
@@ -115,53 +123,80 @@ void smm_cma_reserve_stack(unsigned long size, struct mm_struct *mm)
 	if (pfn != 0) {
 		mm->smm_stack_base_pfn = pfn;
 		mm->smm_stack_page_count = size / PAGE_SIZE;
-		printk("[%s %d] mm: %#lx SMM CMA stack reserved to pfn %#lx, count: %ld\n",
-		       current->comm, current->pid, (unsigned long)mm, pfn,
-		       mm->smm_stack_page_count);
+		smm_dbg("[%s %d] mm: %#lx SMM CMA stack reserved to pfn %#lx, count: %ld\n",
+			current->comm, current->pid, (unsigned long)mm, pfn,
+			mm->smm_stack_page_count);
 	} else {
 		mm->smm_stack_base_pfn = 0;
 		mm->smm_stack_page_count = 0;
-		printk("[%s %d] SMM CMA stack reserve failed\n", current->comm,
-		       current->pid);
+		pr_warn("[%s %d] SMM CMA stack reserve size %ld failed\n",
+			current->comm, current->pid, size);
+	}
+}
+
+void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
+{
+	unsigned long pfn;
+
+	size = round_up(size, PAGE_SIZE);
+	pfn = smm_cma_reserve(size / PAGE_SIZE, 0);
+
+	if (pfn != 0) {
+		mm->smm_mem_base_pfn = pfn;
+		mm->smm_mem_page_count = size / PAGE_SIZE;
+		smm_dbg("[%s %d] mm: %#lx SMM CMA mem reserved to pfn %#lx, count: %ld\n",
+			current->comm, current->pid, (unsigned long)mm, pfn,
+			mm->smm_mem_page_count);
+	} else {
+		mm->smm_mem_base_pfn = 0;
+		mm->smm_mem_page_count = 0;
+		pr_warn("[%s %d] SMM CMA mem reserve size %ld failed\n",
+			current->comm, current->pid, size);
 	}
 }
 
 void exit_smm(struct mm_struct *mm)
 {
 	if (mm->smm_stack_base_pfn && mm->smm_stack_page_count) {
-		printk("[%s %d] mm: %#lx SMM CMA cancel reservation from pfn %#lx, count %d\n",
-		       current->comm, current->pid, (unsigned long) mm, mm->smm_stack_base_pfn,
-		       mm->smm_stack_page_count);
+		smm_dbg("[%s %d] mm: %#lx SMM CMA cancel stack reservation from pfn %#lx, count %ld\n",
+			current->comm, current->pid, (unsigned long)mm,
+			mm->smm_stack_base_pfn, mm->smm_stack_page_count);
 		smm_cma_cancel(mm->smm_stack_base_pfn,
 			       mm->smm_stack_page_count);
+	}
+
+	if (mm->smm_mem_base_pfn && mm->smm_mem_page_count) {
+		smm_dbg("[%s %d] mm: %#lx SMM CMA cancel mem reservation from pfn %#lx, count %ld\n",
+			current->comm, current->pid, (unsigned long)mm,
+			mm->smm_mem_base_pfn, mm->smm_mem_page_count);
+		smm_cma_cancel(mm->smm_mem_base_pfn, mm->smm_mem_page_count);
 	}
 }
 
 void mm_init_smm(struct mm_struct *mm)
 {
+	mm->smm_code_base_va = 0;
+	mm->smm_code_end_va = 0;
 	mm->smm_stack_base_va = 0;
 	mm->smm_stack_end_va = 0;
-	mm->smm_stack_base_pfn = 0;
-
 	mm->smm_heap_base_va = 0;
 	mm->smm_heap_end_va = 0;
-	mm->smm_heap_base_pfn = 0;
-
-	mm->smm_code_base_va = 0;
-	mm->smm_code_base_pfn = 0;
-
 	mm->smm_mmap_base_va = 0;
-	mm->smm_mmap_base_pfn = 0;
+	mm->smm_mmap_end_va = 0;
 
-	mm->smm_stack_page_count = 0;
+	mm->smm_code_base_pfn = 0;
+	mm->smm_stack_base_pfn = 0;
+	mm->smm_mem_base_pfn = 0;
+
 	mm->smm_code_page_count = 0;
-	mm->smm_heap_page_count = 0;
-	mm->smm_mmap_page_count = 0;
+	mm->smm_stack_page_count = 0;
+	mm->smm_mem_page_count = 0;
 }
 
 unsigned long smm_stack_va_to_pa(struct mm_struct *mm, unsigned long va)
 {
 	unsigned long pa = 0;
+
 	if (mm->smm_stack_base_pfn && mm->smm_stack_base_va &&
 	    mm->smm_stack_page_count) {
 		pa = ((mm->smm_stack_base_pfn + mm->smm_stack_page_count)
@@ -170,5 +205,24 @@ unsigned long smm_stack_va_to_pa(struct mm_struct *mm, unsigned long va)
 		return pa;
 	}
 
-	return pa;
+	return 0;
+}
+
+unsigned long smm_heap_va_to_pa(struct mm_struct *mm, unsigned long va)
+{
+	unsigned long pa = 0;
+
+	if (mm->smm_heap_base_va && mm->smm_heap_end_va &&
+	    mm->smm_mem_base_pfn && mm->smm_mem_page_count) {
+
+		if (va < mm->smm_heap_base_va || va >= mm->smm_heap_end_va)
+			return 0;
+
+		pa = va - mm->smm_heap_base_va + (mm->smm_mem_base_pfn << PAGE_SHIFT);
+
+		/* TODO: Check mmap and heap overlap! */
+		return pa;
+	}
+
+	return 0;
 }

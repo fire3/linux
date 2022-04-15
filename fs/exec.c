@@ -602,6 +602,11 @@ static int copy_strings(int argc, struct user_arg_ptr argv,
 				ret = -EFAULT;
 				goto out;
 			}
+#ifdef CONFIG_SMM
+			if (strncmp(kaddr+offset, "SMM_MEM", 7) == 0) {
+				smm_cma_reserve_mem(memparse(kaddr+offset+8, NULL), bprm->mm);
+			}
+#endif
 		}
 	}
 	ret = 0;

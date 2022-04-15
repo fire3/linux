@@ -3527,11 +3527,31 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		if (pfn != 0) {
 			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
 			if (ret == 0) {
-				//printk("do_anonymous_page: [%s %d], [%#lx] pfn: %#lx\n",current->comm, current->pid, vmf->address, pfn);
+				//printk("do_anonymous_page contig: [%s %d], [%#lx] pfn: %#lx\n",current->comm, current->pid, vmf->address, pfn);
 				page = pfn_to_page(pfn);
 			} else {
 				page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
 			}
+		} else {
+			page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+			/*
+			if (page)
+				printk("do_anonymous_page highpage: [%s %d], [%#lx] pfn: %#lx\n",current->comm, current->pid, vmf->address, page_to_pfn(page));
+			*/
+		}
+	} else if (vma->vm_flags & VM_SMM_HEAP) {
+		unsigned long pfn;
+		int ret;
+		pfn = smm_heap_va_to_pa(vma->vm_mm, vmf->address) >> PAGE_SHIFT;
+		if  (pfn != 0) {
+			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+			if (ret == 0) {
+				page = pfn_to_page(pfn);
+			} else {
+				page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+			}
+		} else  {
+			page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
 		}
 	} else {
 		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);

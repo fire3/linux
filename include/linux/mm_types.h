@@ -413,21 +413,23 @@ struct mm_struct {
 #endif
 #ifdef CONFIG_SMM
 		struct smm_slb smm_slb[SMM_SLB_ENTRY_SIZE];
+
+		unsigned long smm_code_base_va;
+		unsigned long smm_code_end_va;
 		unsigned long smm_stack_base_va;
 		unsigned long smm_stack_end_va;
-		unsigned long smm_stack_base_pfn;
 		unsigned long smm_heap_base_va;
 		unsigned long smm_heap_end_va;
-		unsigned long smm_heap_base_pfn;
-		unsigned long smm_code_base_va;
-		unsigned long smm_code_base_pfn;
 		unsigned long smm_mmap_base_va;
-		unsigned long smm_mmap_base_pfn;
+		unsigned long smm_mmap_end_va;
+
+		unsigned long smm_code_base_pfn;
+		unsigned long smm_stack_base_pfn;
+		unsigned long smm_mem_base_pfn;
 
                 unsigned long smm_stack_page_count;
                 unsigned long smm_code_page_count;
-                unsigned long smm_heap_page_count;
-                unsigned long smm_mmap_page_count;
+                unsigned long smm_mem_page_count;
 #endif
 		unsigned long mmap_base;	/* base of mmap area */
 		unsigned long mmap_legacy_base;	/* base of mmap area in bottom-up allocations */
