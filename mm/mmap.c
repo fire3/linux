@@ -1901,6 +1901,15 @@ out:
 	 */
 	vma->vm_flags |= VM_SOFTDIRTY;
 
+#ifdef CONFIG_SMM
+	if (vma->vm_start >= (vma->vm_mm->mmap_base - vma->vm_mm->smm_mem_page_count * PAGE_SIZE)) {
+		vma->vm_flags |= VM_SMM_MMAP;
+		vma->vm_mm->smm_mmap_end_va = vma->vm_mm->mmap_base;
+		if (vma->vm_mm->smm_mmap_base_va == 0 ||
+				vma->vm_start < vma->vm_mm->smm_mmap_base_va)
+			vma->vm_mm->smm_mmap_base_va = vma->vm_start;
+	}
+#endif
 	vma_set_page_prot(vma);
 
 	return addr;
@@ -2291,6 +2300,7 @@ get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
 	}
 
 	addr = get_area(file, addr, len, pgoff, flags);
+
 	if (IS_ERR_VALUE(addr))
 		return addr;
 

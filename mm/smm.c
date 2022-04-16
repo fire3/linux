@@ -55,7 +55,7 @@ static bool smm_reserve_called __initdata;
 #define smm_dbg(fmt, ...)                                                      \
 	do {                                                                   \
 		if (smm_debug)                                                 \
-			pr_info(fmt, ##__VA_ARGS__);                           \
+			printk(fmt, ##__VA_ARGS__);                           \
 	} while (0)
 
 static int smm_debug = 1;
@@ -198,7 +198,7 @@ unsigned long smm_stack_va_to_pa(struct mm_struct *mm, unsigned long va)
 	unsigned long pa = 0;
 
 	if (mm->smm_stack_base_pfn && mm->smm_stack_base_va &&
-	    mm->smm_stack_page_count) {
+	    mm->smm_stack_page_count && mm->smm_stack_end_va) {
 		pa = ((mm->smm_stack_base_pfn + mm->smm_stack_page_count)
 		      << PAGE_SHIFT) -
 		     (mm->smm_stack_end_va - va);
@@ -224,5 +224,18 @@ unsigned long smm_heap_va_to_pa(struct mm_struct *mm, unsigned long va)
 		return pa;
 	}
 
+	return 0;
+}
+
+unsigned long smm_mmap_va_to_pa(struct mm_struct *mm, unsigned long va)
+{
+	unsigned long pa = 0;
+	if (mm->smm_mem_base_pfn && mm->smm_mmap_base_va &&
+	    mm->smm_mem_page_count && mm->smm_stack_end_va) {
+		pa = ((mm->smm_mem_base_pfn + mm->smm_mem_page_count)
+		      << PAGE_SHIFT) -
+		     (mm->smm_mmap_end_va - va);
+		return pa;
+	}
 	return 0;
 }

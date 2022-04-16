@@ -3553,6 +3553,21 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		} else  {
 			page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
 		}
+	} else if (vma->vm_flags & VM_SMM_MMAP) {
+		unsigned long pfn;
+		int ret;
+		pfn = smm_mmap_va_to_pa(vma->vm_mm, vmf->address) >> PAGE_SHIFT;
+		if  (pfn != 0) {
+			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+			if (ret == 0) {
+				page = pfn_to_page(pfn);
+				clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
+			} else {
+				page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+			}
+		} else {
+			page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+		}
 	} else {
 		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
 	}
@@ -4404,6 +4419,11 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 			pte_unmap(vmf->pte);
 			vmf->pte = NULL;
 		}
+	}
+
+	if (vmf->vma->vm_flags & VM_SMM_MMAP) {
+		printk("[%s %d], handle_pte_fault: %#lx vmf->pte: %#lx, vma_is_anonymous: %d, pte_present:%d\n",
+				current->comm, current->pid, vmf->address, (unsigned long)vmf->pte, vma_is_anonymous(vmf->vma), pte_present(vmf->orig_pte));
 	}
 
 	if (!vmf->pte) {
