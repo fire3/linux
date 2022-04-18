@@ -86,7 +86,7 @@ void __init smm_reserve(int order)
 	}
 
 	size = round_up(smm_reserve_size, PAGE_SIZE << order);
-	res = cma_declare_contiguous_nid(0, size, 0, PAGE_SIZE << order, 0,
+	res = cma_declare_contiguous_nid(0x100000000UL, size, 0, PAGE_SIZE << order, 0,
 					 false, "smm", &smm_cma, NUMA_NO_NODE);
 
 	if (res) {
