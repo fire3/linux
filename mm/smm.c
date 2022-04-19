@@ -87,10 +87,11 @@ void __init smm_reserve(int order)
 
 	size = round_up(smm_reserve_size, PAGE_SIZE << order);
 	res = cma_declare_contiguous_nid(0x100000000UL, size, 0, PAGE_SIZE << order, 0,
-					 false, "smm", &smm_cma, NUMA_NO_NODE);
+					 true, "smm", &smm_cma, NUMA_NO_NODE);
 
 	if (res) {
 		pr_warn("smm: reservation failed.\n");
+		return;
 	}
 	pr_info("smm: reserved %lu MiB\n", size / SZ_1M);
 }

@@ -4421,11 +4421,6 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		}
 	}
 
-	if (vmf->vma->vm_flags & VM_SMM_MMAP) {
-		printk("[%s %d], handle_pte_fault: %#lx vmf->pte: %#lx, vma_is_anonymous: %d, pte_present:%d\n",
-				current->comm, current->pid, vmf->address, (unsigned long)vmf->pte, vma_is_anonymous(vmf->vma), pte_present(vmf->orig_pte));
-	}
-
 	if (!vmf->pte) {
 		if (vma_is_anonymous(vmf->vma))
 			return do_anonymous_page(vmf);
