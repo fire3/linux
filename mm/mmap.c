@@ -283,9 +283,9 @@ success:
 	next = find_vma(mm, brk - 8);
 	if (next) {
 		next->vm_flags = next->vm_flags | VM_SMM_HEAP;
-		next->vm_mm->smm_heap_base_va = next->vm_start;
-		next->vm_mm->smm_heap_end_va = next->vm_end;
 	}
+	mm->smm_heap_base_va = mm->start_brk;
+	mm->smm_heap_end_va = mm->brk;
 #endif
 	return brk;
 
