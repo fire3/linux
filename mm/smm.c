@@ -119,6 +119,9 @@ void smm_cma_reserve_code(unsigned long size, struct mm_struct *mm)
 {
 	unsigned long pfn;
 
+	if (mm->smm_code_page_count)
+		return;
+
 	size = round_up(size, PAGE_SIZE);
 	pfn = smm_cma_reserve(size / PAGE_SIZE, 0);
 
@@ -134,6 +137,9 @@ void smm_cma_reserve_code(unsigned long size, struct mm_struct *mm)
 void smm_cma_reserve_stack(unsigned long size, struct mm_struct *mm)
 {
 	unsigned long pfn;
+
+	if (mm->smm_stack_page_count)
+		return;
 
 	size = round_up(size, PAGE_SIZE);
 	pfn = smm_cma_reserve(size / PAGE_SIZE, 0);
@@ -152,6 +158,9 @@ void smm_cma_reserve_stack(unsigned long size, struct mm_struct *mm)
 void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
 {
 	unsigned long pfn;
+
+	if (mm->smm_mem_page_count)
+		return;
 
 	size = round_up(size, PAGE_SIZE);
 	pfn = smm_cma_reserve(size / PAGE_SIZE, 0);
@@ -181,6 +190,8 @@ void exit_smm(struct mm_struct *mm)
 
 void mm_init_smm(struct mm_struct *mm)
 {
+	mm->smm_activate = 0;
+
 	mm->smm_code_base_va = 0;
 	mm->smm_code_end_va = 0;
 	mm->smm_stack_base_va = 0;
@@ -205,6 +216,8 @@ unsigned long smm_stack_va_to_pa(struct mm_struct *mm, unsigned long va)
 
 	if (mm->smm_stack_base_pfn && mm->smm_stack_base_va &&
 	    mm->smm_stack_page_count && mm->smm_stack_end_va) {
+		if ((mm->smm_stack_end_va - round_down(va, PAGE_SIZE)) > SMM_STACK_SIZE_LIMIT)
+			return 0;
 		pa = ((mm->smm_stack_base_pfn + mm->smm_stack_page_count)
 		      << PAGE_SHIFT) -
 		     (mm->smm_stack_end_va - va);

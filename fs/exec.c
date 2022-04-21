@@ -276,7 +276,10 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
 #ifdef CONFIG_SMM
 	vma->vm_flags = vma->vm_flags | VM_SMM_STACK;
-	mm->smm_stack_base_va = vma->vm_start;
+	if ((vma->vm_end - vma->vm_start) > SMM_STACK_SIZE_LIMIT)
+		mm->smm_stack_base_va = vma->vm_end - SMM_STACK_SIZE_LIMIT;
+	else
+		mm->smm_stack_base_va = vma->vm_start;
 	mm->smm_stack_end_va = vma->vm_end;
 #endif
 	err = insert_vm_struct(mm, vma);
@@ -386,9 +389,12 @@ static int bprm_mm_init(struct linux_binprm *bprm)
 		goto err;
 
 #ifdef CONFIG_SMM
+	/* Once SMM is enabled, stack will always allocate from CMA area */
 	if (bprm->rlim_stack.rlim_cur < SMM_STACK_SIZE_LIMIT) {
+		mm->smm_stack_size = bprm->rlim_stack.rlim_cur;
 		smm_cma_reserve_stack(bprm->rlim_stack.rlim_cur, mm);
 	} else {
+		mm->smm_stack_size = SMM_STACK_SIZE_LIMIT;
 		smm_cma_reserve_stack(SMM_STACK_SIZE_LIMIT, mm);
 	}
 #endif
@@ -557,6 +563,7 @@ static int copy_strings(int argc, struct user_arg_ptr argv,
 			goto out;
 #endif
 
+
 		while (len > 0) {
 			int offset, bytes_to_copy;
 
@@ -579,6 +586,21 @@ static int copy_strings(int argc, struct user_arg_ptr argv,
 			str -= bytes_to_copy;
 			len -= bytes_to_copy;
 
+#ifdef CONFIG_SMM
+			{
+				char * argbuff = kmalloc(bytes_to_copy, GFP_KERNEL);
+				if (copy_from_user(argbuff, str, bytes_to_copy)) {
+					ret = -EFAULT;
+					goto out;
+				}
+				if (strncmp(argbuff, "SMM_MEM", 7) == 0) {
+					bprm->mm->smm_mem_size = memparse(argbuff+8, NULL);
+					smm_cma_reserve_mem(bprm->mm->smm_mem_size, bprm->mm);
+					bprm->mm->smm_activate = 1;
+				}
+				kfree(argbuff);
+			}
+#endif
 			if (!kmapped_page || kpos != (pos & PAGE_MASK)) {
 				struct page *page;
 
@@ -602,11 +624,6 @@ static int copy_strings(int argc, struct user_arg_ptr argv,
 				ret = -EFAULT;
 				goto out;
 			}
-#ifdef CONFIG_SMM
-			if (strncmp(kaddr+offset, "SMM_MEM", 7) == 0) {
-				smm_cma_reserve_mem(memparse(kaddr+offset+8, NULL), bprm->mm);
-			}
-#endif
 		}
 	}
 	ret = 0;

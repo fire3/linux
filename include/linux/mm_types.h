@@ -414,6 +414,13 @@ struct mm_struct {
 #ifdef CONFIG_SMM
 		struct smm_slb smm_slb[SMM_SLB_ENTRY_SIZE];
 
+		int smm_activate;		/* Activate by SMM_MEM env */
+
+		unsigned long smm_code_size;    /* Get from elf */
+		unsigned long smm_stack_size;   /* Get from rlimit */
+		unsigned long smm_mem_size;     /* Get from SMM_MEM env */
+
+
 		unsigned long smm_code_base_va;
 		unsigned long smm_code_end_va;
 		unsigned long smm_stack_base_va;
@@ -427,9 +434,9 @@ struct mm_struct {
 		unsigned long smm_stack_base_pfn;
 		unsigned long smm_mem_base_pfn;
 
-                unsigned long smm_stack_page_count;
-                unsigned long smm_code_page_count;
-                unsigned long smm_mem_page_count;
+                unsigned long smm_stack_page_count;  /* CMA reserved stack size */
+                unsigned long smm_code_page_count;   /* CMA reserved code size */
+                unsigned long smm_mem_page_count;    /* CMA reserved mmap/heap size */
 #endif
 		unsigned long mmap_base;	/* base of mmap area */
 		unsigned long mmap_legacy_base;	/* base of mmap area in bottom-up allocations */

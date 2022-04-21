@@ -377,6 +377,38 @@ static const struct file_operations proc_pid_cmdline_ops = {
 	.llseek	= generic_file_llseek,
 };
 
+#ifdef CONFIG_SMM
+
+static int proc_pid_smm(struct seq_file *m, struct pid_namespace *ns,
+			   struct pid *pid, struct task_struct *task)
+{
+	seq_printf(m, "code:\t%#lx-%#lx %#lx-%#lx\n",
+			task->mm->smm_code_base_va,
+			task->mm->smm_code_end_va,
+			task->mm->smm_code_base_pfn,
+			task->mm->smm_code_base_pfn + task->mm->smm_code_page_count);
+
+	seq_printf(m, "heap:\t%#lx-%#lx %#lx-%#lx\n",
+			task->mm->smm_heap_base_va,
+			task->mm->smm_heap_end_va,
+			task->mm->smm_mem_base_pfn,
+			task->mm->smm_mem_base_pfn + task->mm->smm_mem_page_count);
+
+	seq_printf(m, "mmap:\t%#lx-%#lx %#lx-%#lx\n",
+			task->mm->smm_mmap_base_va,
+			task->mm->smm_mmap_end_va,
+			task->mm->smm_mem_base_pfn,
+			task->mm->smm_mem_base_pfn + task->mm->smm_mem_page_count);
+
+	seq_printf(m, "stack:\t%#lx-%#lx %#lx-%#lx\n",
+			task->mm->smm_stack_base_va,
+			task->mm->smm_stack_end_va,
+			task->mm->smm_stack_base_pfn,
+			task->mm->smm_stack_base_pfn + task->mm->smm_stack_page_count);
+	return 0;
+}
+#endif
+
 #ifdef CONFIG_KALLSYMS
 /*
  * Provides a wchan file via kallsyms in a proper one-value-per-file format.
@@ -2620,7 +2652,7 @@ static struct dentry *proc_pident_instantiate(struct dentry *dentry,
 	return d_splice_alias(inode, dentry);
 }
 
-static struct dentry *proc_pident_lookup(struct inode *dir, 
+static struct dentry *proc_pident_lookup(struct inode *dir,
 					 struct dentry *dentry,
 					 const struct pid_entry *p,
 					 const struct pid_entry *end)
@@ -2820,7 +2852,7 @@ static const struct pid_entry attr_dir_stuff[] = {
 
 static int proc_attr_dir_readdir(struct file *file, struct dir_context *ctx)
 {
-	return proc_pident_readdir(file, ctx, 
+	return proc_pident_readdir(file, ctx,
 				   attr_dir_stuff, ARRAY_SIZE(attr_dir_stuff));
 }
 
@@ -3187,6 +3219,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("stat",       S_IRUGO, proc_tgid_stat),
 	ONE("statm",      S_IRUGO, proc_pid_statm),
 	REG("maps",       S_IRUGO, proc_pid_maps_operations),
+#ifdef CONFIG_SMM
+	ONE("smm",       S_IRUGO, proc_pid_smm),
+#endif
 #ifdef CONFIG_NUMA
 	REG("numa_maps",  S_IRUGO, proc_pid_numa_maps_operations),
 #endif

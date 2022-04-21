@@ -4184,8 +4184,9 @@ static vm_fault_t do_fault(struct vm_fault *vmf)
 
 			pte_unmap_unlock(vmf->pte, vmf->ptl);
 		}
-	} else if (!(vmf->flags & FAULT_FLAG_WRITE))
+	} else if (!(vmf->flags & FAULT_FLAG_WRITE)) {
 		ret = do_read_fault(vmf);
+	}
 	else if (!(vma->vm_flags & VM_SHARED))
 		ret = do_cow_fault(vmf);
 	else

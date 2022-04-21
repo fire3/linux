@@ -1148,7 +1148,10 @@ out_free_interp:
 			vma = find_vma(current->mm, load_bias + vaddr);
 			if (vma) {
 				vma->vm_flags |= VM_SMM_CODE;
-				//printk("%s %d elf_mmap: %#lx - %#lx\n", current->comm, current->pid, vma->vm_start, vma->vm_end);
+				if (vma->vm_start < vma->vm_mm->smm_code_base_va || vma->vm_mm->smm_code_base_va == 0)
+					vma->vm_mm->smm_code_base_va = vma->vm_start;
+				if (vma->vm_end > vma->vm_mm->smm_code_end_va || vma->vm_mm->smm_code_end_va == 0)
+					vma->vm_mm->smm_code_end_va = vma->vm_end;
 			}
 		}
 #endif
@@ -1217,11 +1220,6 @@ out_free_interp:
 		goto out_free_dentry;
 	}
 
-#ifdef CONFIG_SMM
-	current->mm->smm_code_base_va = start_code;
-	current->mm->smm_code_end_va = round_up(end_data, PAGE_SIZE);
-	smm_cma_reserve_code(current->mm->smm_code_end_va - current->mm->smm_code_base_va, current->mm);
-#endif
 	if (interpreter) {
 		elf_entry = load_elf_interp(interp_elf_ex,
 					    interpreter,
@@ -1276,6 +1274,14 @@ out_free_interp:
 	mm->start_data = start_data;
 	mm->end_data = end_data;
 	mm->start_stack = bprm->p;
+
+#ifdef CONFIG_SMM
+	mm->smm_code_size = mm->smm_code_end_va - mm->smm_code_base_va;
+	if (mm->smm_activate) {
+		smm_cma_reserve_code(mm->smm_code_end_va - mm->smm_code_base_va, mm);
+	}
+#endif
+
 
 	if ((current->flags & PF_RANDOMIZE) && (randomize_va_space > 1)) {
 		/*
