@@ -114,6 +114,23 @@ bool smm_cma_cancel(unsigned long pfn, unsigned int count)
 	return cma_cancel(smm_cma, pfn, count);
 }
 
+
+void smm_cma_reserve_code(unsigned long size, struct mm_struct *mm)
+{
+	unsigned long pfn;
+
+	size = round_up(size, PAGE_SIZE);
+	pfn = smm_cma_reserve(size / PAGE_SIZE, 0);
+
+	if (pfn != 0) {
+		mm->smm_code_base_pfn = pfn;
+		mm->smm_code_page_count = size / PAGE_SIZE;
+	} else {
+		mm->smm_code_base_pfn = 0;
+		mm->smm_code_page_count = 0;
+	}
+}
+
 void smm_cma_reserve_stack(unsigned long size, struct mm_struct *mm)
 {
 	unsigned long pfn;
@@ -124,9 +141,6 @@ void smm_cma_reserve_stack(unsigned long size, struct mm_struct *mm)
 	if (pfn != 0) {
 		mm->smm_stack_base_pfn = pfn;
 		mm->smm_stack_page_count = size / PAGE_SIZE;
-		smm_dbg("[%s %d] mm: %#lx SMM CMA stack reserved to pfn %#lx, count: %ld\n",
-			current->comm, current->pid, (unsigned long)mm, pfn,
-			mm->smm_stack_page_count);
 	} else {
 		mm->smm_stack_base_pfn = 0;
 		mm->smm_stack_page_count = 0;
@@ -145,9 +159,6 @@ void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
 	if (pfn != 0) {
 		mm->smm_mem_base_pfn = pfn;
 		mm->smm_mem_page_count = size / PAGE_SIZE;
-		smm_dbg("[%s %d] mm: %#lx SMM CMA mem reserved to pfn %#lx, count: %ld\n",
-			current->comm, current->pid, (unsigned long)mm, pfn,
-			mm->smm_mem_page_count);
 	} else {
 		mm->smm_mem_base_pfn = 0;
 		mm->smm_mem_page_count = 0;
@@ -159,17 +170,11 @@ void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
 void exit_smm(struct mm_struct *mm)
 {
 	if (mm->smm_stack_base_pfn && mm->smm_stack_page_count) {
-		smm_dbg("[%s %d] mm: %#lx SMM CMA cancel stack reservation from pfn %#lx, count %ld\n",
-			current->comm, current->pid, (unsigned long)mm,
-			mm->smm_stack_base_pfn, mm->smm_stack_page_count);
 		smm_cma_cancel(mm->smm_stack_base_pfn,
 			       mm->smm_stack_page_count);
 	}
 
 	if (mm->smm_mem_base_pfn && mm->smm_mem_page_count) {
-		smm_dbg("[%s %d] mm: %#lx SMM CMA cancel mem reservation from pfn %#lx, count %ld\n",
-			current->comm, current->pid, (unsigned long)mm,
-			mm->smm_mem_base_pfn, mm->smm_mem_page_count);
 		smm_cma_cancel(mm->smm_mem_base_pfn, mm->smm_mem_page_count);
 	}
 }

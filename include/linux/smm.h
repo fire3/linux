@@ -11,6 +11,7 @@
 extern void __init smm_reserve(int order);
 extern bool smm_cma_cancel(unsigned long pfn, unsigned int count);
 extern unsigned long smm_cma_reserve(unsigned long count, unsigned long align);
+extern void smm_cma_reserve_code(unsigned long size, struct mm_struct *mm);
 extern void smm_cma_reserve_stack(unsigned long size, struct mm_struct *mm);
 extern void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm);
 extern void exit_smm(struct mm_struct *mm);
