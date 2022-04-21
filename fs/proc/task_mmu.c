@@ -660,6 +660,12 @@ static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 #if VM_PKEY_BIT4
 		[ilog2(VM_PKEY_BIT4)]	= "",
 #endif
+#ifdef CONFIG_SMM
+		[ilog2(VM_SMM_CODE)]	= "cd",
+		[ilog2(VM_SMM_HEAP)]	= "hp",
+		[ilog2(VM_SMM_MMAP)]	= "mp",
+		[ilog2(VM_SMM_STACK)]	= "sk",
+#endif
 #endif /* CONFIG_ARCH_HAS_PKEYS */
 	};
 	size_t i;
