@@ -16,6 +16,7 @@ extern void smm_cma_reserve_stack(unsigned long size, struct mm_struct *mm);
 extern void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm);
 extern void exit_smm(struct mm_struct *mm);
 extern unsigned long smm_stack_va_to_pa(struct mm_struct *mm, unsigned long va);
+extern unsigned long smm_code_va_to_pa(struct mm_struct *mm, unsigned long va);
 extern unsigned long smm_heap_va_to_pa(struct mm_struct *mm, unsigned long va);
 extern unsigned long smm_mmap_va_to_pa(struct mm_struct *mm, unsigned long va);
 extern void mm_init_smm(struct mm_struct *mm);

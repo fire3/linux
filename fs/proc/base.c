@@ -382,24 +382,22 @@ static const struct file_operations proc_pid_cmdline_ops = {
 static int proc_pid_smm(struct seq_file *m, struct pid_namespace *ns,
 			   struct pid *pid, struct task_struct *task)
 {
+	seq_printf(m, "smm_activate: %d\n", task->mm->smm_activate);
 	seq_printf(m, "code:\t%#lx-%#lx %#lx-%#lx\n",
 			task->mm->smm_code_base_va,
 			task->mm->smm_code_end_va,
 			task->mm->smm_code_base_pfn,
 			task->mm->smm_code_base_pfn + task->mm->smm_code_page_count);
-
 	seq_printf(m, "heap:\t%#lx-%#lx %#lx-%#lx\n",
 			task->mm->smm_heap_base_va,
 			task->mm->smm_heap_end_va,
 			task->mm->smm_mem_base_pfn,
 			task->mm->smm_mem_base_pfn + task->mm->smm_mem_page_count);
-
 	seq_printf(m, "mmap:\t%#lx-%#lx %#lx-%#lx\n",
 			task->mm->smm_mmap_base_va,
 			task->mm->smm_mmap_end_va,
 			task->mm->smm_mem_base_pfn,
 			task->mm->smm_mem_base_pfn + task->mm->smm_mem_page_count);
-
 	seq_printf(m, "stack:\t%#lx-%#lx %#lx-%#lx\n",
 			task->mm->smm_stack_base_va,
 			task->mm->smm_stack_end_va,

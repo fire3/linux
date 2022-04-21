@@ -210,6 +210,24 @@ void mm_init_smm(struct mm_struct *mm)
 	mm->smm_mem_page_count = 0;
 }
 
+unsigned long smm_code_va_to_pa(struct mm_struct *mm, unsigned long va)
+{
+	unsigned long pa = 0;
+
+	if (mm->smm_code_base_va && mm->smm_code_end_va &&
+	    mm->smm_mem_base_pfn && mm->smm_mem_page_count) {
+
+		if (va < mm->smm_code_base_va || va >= mm->smm_code_end_va)
+			return 0;
+
+		pa = va - mm->smm_code_base_va + (mm->smm_mem_base_pfn << PAGE_SHIFT);
+
+		return pa;
+	}
+
+	return 0;
+}
+
 unsigned long smm_stack_va_to_pa(struct mm_struct *mm, unsigned long va)
 {
 	unsigned long pa = 0;
