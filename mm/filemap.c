@@ -2884,8 +2884,42 @@ void filemap_map_pages(struct vm_fault *vmf,
 		if (vmf->pte)
 			vmf->pte += xas.xa_index - last_pgoff;
 		last_pgoff = xas.xa_index;
+#ifdef CONFIG_SMM
+		{
+			unsigned long pfn;
+			int r;
+			struct page *npage;
+			if (!vmf->vma->vm_mm->smm_activate)
+				goto cont;
+			if (!(vmf->vma->vm_flags & VM_SMM_CODE))
+				goto cont;
+			pfn = smm_code_va_to_pa(vmf->vma->vm_mm, vmf->address) >> PAGE_SHIFT;
+			if (pfn == 0)
+				goto cont;
+			if (vmf->pte && pte_pfn(*vmf->pte) == pfn)
+				goto cont;
+			r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA,
+						GFP_HIGHUSER|__GFP_MOVABLE);
+			if (r != 0)
+				goto cont;
+			npage = pfn_to_page(pfn);
+			if (likely(page)) {
+				if (!vmf->pte) {
+					/* Only copy first touched pages */
+					copy_user_highpage(npage, page, vmf->address, vmf->vma);
+				}
+				if (alloc_set_pte(vmf, npage))
+					goto unlock;
+				goto scont;
+			}
+		}
+cont:
+#endif
 		if (alloc_set_pte(vmf, page))
 			goto unlock;
+#ifdef CONFIG_SMM
+scont:
+#endif
 		unlock_page(head);
 		goto next;
 unlock:

@@ -3079,6 +3079,23 @@ static vm_fault_t do_wp_page(struct vm_fault *vmf)
 		return handle_userfault(vmf, VM_UFFD_WP);
 	}
 
+#ifdef CONFIG_SMM
+	{
+		unsigned long pfn;
+		if (!vmf->vma->vm_mm->smm_activate)
+			goto cont;
+		if (!(vmf->vma->vm_flags & VM_SMM_CODE))
+			goto cont;
+
+		pfn = smm_code_va_to_pa(vmf->vma->vm_mm, vmf->address) >> PAGE_SHIFT;
+		if (pfn == 0)
+			goto cont;
+		if (pte_pfn(vmf->orig_pte) == pfn) {
+			return wp_pfn_shared(vmf);
+		}
+	}
+cont:
+#endif
 	vmf->page = vm_normal_page(vma, vmf->address, vmf->orig_pte);
 	if (!vmf->page) {
 		/*
@@ -4075,10 +4092,34 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 
 	if (unlikely(anon_vma_prepare(vma)))
 		return VM_FAULT_OOM;
+#ifdef CONFIG_SMM
+	{
+		unsigned long pfn = 0;
+		int r;
 
+		if (!vmf->vma->vm_mm->smm_activate)
+			goto cont;
+		if (!(vmf->vma->vm_flags & VM_SMM_CODE))
+			goto cont;
+
+		pfn = smm_code_va_to_pa(vmf->vma->vm_mm, vmf->address) >> PAGE_SHIFT;
+		if (pfn == 0)
+			goto cont;
+		r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA,
+				GFP_HIGHUSER|__GFP_MOVABLE);
+		if (r != 0)
+			goto cont;
+		vmf->cow_page = pfn_to_page(pfn);
+		goto scont;
+	}
+cont:
+#endif
 	vmf->cow_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
 	if (!vmf->cow_page)
 		return VM_FAULT_OOM;
+#ifdef CONFIG_SMM
+scont:
+#endif
 
 	if (mem_cgroup_charge(vmf->cow_page, vma->vm_mm, GFP_KERNEL)) {
 		put_page(vmf->cow_page);
