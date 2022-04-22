@@ -1199,6 +1199,16 @@ out_free_interp:
 		}
 	}
 
+#ifdef CONFIG_SMM
+	current->mm->smm_code_size =
+		current->mm->smm_code_end_va - current->mm->smm_code_base_va;
+	if (current->mm->smm_activate) {
+		smm_cma_reserve_code(current->mm->smm_code_end_va -
+				current->mm->smm_code_base_va, current->mm);
+	}
+#endif
+
+
 	e_entry = elf_ex->e_entry + load_bias;
 	elf_bss += load_bias;
 	elf_brk += load_bias;
@@ -1274,13 +1284,6 @@ out_free_interp:
 	mm->start_data = start_data;
 	mm->end_data = end_data;
 	mm->start_stack = bprm->p;
-
-#ifdef CONFIG_SMM
-	mm->smm_code_size = mm->smm_code_end_va - mm->smm_code_base_va;
-	if (mm->smm_activate) {
-		smm_cma_reserve_code(mm->smm_code_end_va - mm->smm_code_base_va, mm);
-	}
-#endif
 
 
 	if ((current->flags & PF_RANDOMIZE) && (randomize_va_space > 1)) {
