@@ -125,6 +125,8 @@ void smm_cma_reserve_code(unsigned long size, struct mm_struct *mm)
 	size = round_up(size, PAGE_SIZE);
 	pfn = smm_cma_reserve(size / PAGE_SIZE, 0);
 
+	smm_dbg("SMM code reserved to pfn: %#lx, size: %#lx\n", pfn, size);
+
 	if (pfn != 0) {
 		mm->smm_code_base_pfn = pfn;
 		mm->smm_code_page_count = size / PAGE_SIZE;
@@ -215,12 +217,12 @@ unsigned long smm_code_va_to_pa(struct mm_struct *mm, unsigned long va)
 	unsigned long pa = 0;
 
 	if (mm->smm_code_base_va && mm->smm_code_end_va &&
-	    mm->smm_mem_base_pfn && mm->smm_mem_page_count) {
+	    mm->smm_code_base_pfn && mm->smm_code_page_count) {
 
 		if (va < mm->smm_code_base_va || va >= mm->smm_code_end_va)
 			return 0;
 
-		pa = va - mm->smm_code_base_va + (mm->smm_mem_base_pfn << PAGE_SHIFT);
+		pa = va - mm->smm_code_base_va + (mm->smm_code_base_pfn << PAGE_SHIFT);
 
 		return pa;
 	}
