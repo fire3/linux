@@ -278,3 +278,27 @@ unsigned long smm_mmap_va_to_pa(struct mm_struct *mm, unsigned long va)
 	}
 	return 0;
 }
+
+
+unsigned long smm_va_to_pa(struct vm_area_struct *vma, unsigned long va)
+{
+	if (!vma)
+		return 0;
+
+	if ((va < vma->vm_start) || (va >= vma->vm_end))
+		return 0;
+
+	if (vma->vm_flags & VM_SMM_CODE)
+		return smm_code_va_to_pa(vma->vm_mm, va);
+
+	if (vma->vm_flags & VM_SMM_HEAP)
+		return smm_heap_va_to_pa(vma->vm_mm, va);
+
+	if (vma->vm_flags & VM_SMM_MMAP)
+		return smm_mmap_va_to_pa(vma->vm_mm, va);
+
+	if (vma->vm_flags & VM_SMM_STACK)
+		return smm_stack_va_to_pa(vma->vm_mm, va);
+
+	return 0;
+}

@@ -3084,10 +3084,11 @@ static vm_fault_t do_wp_page(struct vm_fault *vmf)
 		unsigned long pfn;
 		if (!vmf->vma->vm_mm->smm_activate)
 			goto cont;
-		if (!(vmf->vma->vm_flags & VM_SMM_CODE))
+		if (!(vmf->vma->vm_flags & VM_SMM_CODE) &&
+				!(vmf->vma->vm_flags & VM_SMM_MMAP))
 			goto cont;
 
-		pfn = smm_code_va_to_pa(vmf->vma->vm_mm, vmf->address) >> PAGE_SHIFT;
+		pfn = smm_va_to_pa(vmf->vma, vmf->address) >> PAGE_SHIFT;
 		if (pfn == 0)
 			goto cont;
 		if (pte_pfn(vmf->orig_pte) == pfn) {
@@ -4099,10 +4100,11 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 
 		if (!vmf->vma->vm_mm->smm_activate)
 			goto cont;
-		if (!(vmf->vma->vm_flags & VM_SMM_CODE))
+		if (!(vmf->vma->vm_flags & VM_SMM_CODE) &&
+				!(vmf->vma->vm_flags & VM_SMM_MMAP))
 			goto cont;
 
-		pfn = smm_code_va_to_pa(vmf->vma->vm_mm, vmf->address) >> PAGE_SHIFT;
+		pfn = smm_va_to_pa(vmf->vma, vmf->address) >> PAGE_SHIFT;
 		if (pfn == 0)
 			goto cont;
 		r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA,

@@ -19,6 +19,7 @@ extern unsigned long smm_stack_va_to_pa(struct mm_struct *mm, unsigned long va);
 extern unsigned long smm_code_va_to_pa(struct mm_struct *mm, unsigned long va);
 extern unsigned long smm_heap_va_to_pa(struct mm_struct *mm, unsigned long va);
 extern unsigned long smm_mmap_va_to_pa(struct mm_struct *mm, unsigned long va);
+extern unsigned long smm_va_to_pa(struct vm_area_struct *vma, unsigned long va);
 extern void mm_init_smm(struct mm_struct *mm);
 #endif /* __KERNEL__ */
 #endif /* _LINUX_SMM_H */

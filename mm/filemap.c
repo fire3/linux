@@ -2889,22 +2889,31 @@ void filemap_map_pages(struct vm_fault *vmf,
 			unsigned long pfn;
 			int r;
 			struct page *npage;
+			pte_t * pte;
 			if (!vmf->vma->vm_mm->smm_activate)
 				goto cont;
-			if (!(vmf->vma->vm_flags & VM_SMM_CODE))
+			if (!(vmf->vma->vm_flags & VM_SMM_CODE) &&
+					!(vmf->vma->vm_flags & VM_SMM_MMAP))
 				goto cont;
-			pfn = smm_code_va_to_pa(vmf->vma->vm_mm, vmf->address) >> PAGE_SHIFT;
+			if (pmd_none(*vmf->pmd))
+				pte = NULL;
+			else
+				pte = pte_offset_map(vmf->pmd, vmf->address);
+
+			pfn = smm_va_to_pa(vmf->vma, vmf->address) >> PAGE_SHIFT;
+
 			if (pfn == 0)
 				goto cont;
-			if (vmf->pte && pte_pfn(*vmf->pte) == pfn)
+			if (pte && pte_pfn(*pte) == pfn)
 				goto cont;
+
 			r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA,
 						GFP_HIGHUSER|__GFP_MOVABLE);
 			if (r != 0)
 				goto cont;
 			npage = pfn_to_page(pfn);
 			if (likely(page)) {
-				if (!vmf->pte) {
+				if (!pte || (pte && pte_pfn(*pte) != pfn)) {
 					/* Only copy first touched pages */
 					copy_user_highpage(npage, page, vmf->address, vmf->vma);
 				}

@@ -697,6 +697,16 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
 	if (last_bss > elf_bss) {
 		error = vm_brk_flags(elf_bss, last_bss - elf_bss,
 				bss_prot & PROT_EXEC ? VM_EXEC : 0);
+#ifdef CONFIG_SMM
+		{
+			if (current->mm->smm_activate) {
+				struct vm_area_struct *vma;
+				vma = find_extend_vma(current->mm, elf_bss);
+				if (vma)
+					vma->vm_flags |= VM_SMM_MMAP;
+			}
+		}
+#endif
 		if (error)
 			goto out;
 	}
