@@ -165,7 +165,7 @@ void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
 		return;
 
 	size = round_up(size, PAGE_SIZE);
-	pfn = smm_cma_reserve(size / PAGE_SIZE, 0);
+	pfn = smm_cma_reserve(size / PAGE_SIZE, HUGETLB_PAGE_ORDER);
 
 	if (pfn != 0) {
 		mm->smm_mem_base_pfn = pfn;
@@ -250,6 +250,8 @@ unsigned long smm_stack_va_to_pa(struct mm_struct *mm, unsigned long va)
 unsigned long smm_heap_va_to_pa(struct mm_struct *mm, unsigned long va)
 {
 	unsigned long pa = 0;
+	unsigned long hugepage_offset = (~HPAGE_MASK & mm->smm_heap_base_va);
+
 
 	if (mm->smm_heap_base_va && mm->smm_heap_end_va &&
 	    mm->smm_mem_base_pfn && mm->smm_mem_page_count) {
@@ -257,7 +259,7 @@ unsigned long smm_heap_va_to_pa(struct mm_struct *mm, unsigned long va)
 		if (va < mm->smm_heap_base_va || va >= mm->smm_heap_end_va)
 			return 0;
 
-		pa = va - mm->smm_heap_base_va + (mm->smm_mem_base_pfn << PAGE_SHIFT);
+		pa = va - mm->smm_heap_base_va + (mm->smm_mem_base_pfn << PAGE_SHIFT) + hugepage_offset;
 
 		/* TODO: Check mmap and heap overlap! */
 		return pa;
@@ -269,10 +271,12 @@ unsigned long smm_heap_va_to_pa(struct mm_struct *mm, unsigned long va)
 unsigned long smm_mmap_va_to_pa(struct mm_struct *mm, unsigned long va)
 {
 	unsigned long pa = 0;
+	unsigned long hugepage_offset = HPAGE_SIZE - (~HPAGE_MASK & mm->smm_mmap_end_va);
+
 	if (mm->smm_mem_base_pfn && mm->smm_mmap_base_va &&
 	    mm->smm_mem_page_count && mm->smm_stack_end_va) {
 		pa = ((mm->smm_mem_base_pfn + mm->smm_mem_page_count)
-		      << PAGE_SHIFT) -
+		      << PAGE_SHIFT) - hugepage_offset -
 		     (mm->smm_mmap_end_va - va);
 		return pa;
 	}
