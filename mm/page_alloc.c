@@ -2843,6 +2843,10 @@ __rmqueue(struct zone *zone, unsigned int order, int migratetype,
 {
 	struct page *page;
 
+#ifdef CONFIG_SMM
+	// Do not balance between regular and CMA areas.
+	goto retry;
+#endif
 #ifdef CONFIG_CMA
 	/*
 	 * Balance movable allocations between regular and CMA areas by
