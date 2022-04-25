@@ -2909,8 +2909,12 @@ void filemap_map_pages(struct vm_fault *vmf,
 
 			r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA,
 						GFP_HIGHUSER|__GFP_MOVABLE);
-			if (r != 0)
+			if (r != 0) {
+				printk("[%s %d], filemap_map_pages, addr:%#lx, alloc_contig_range: [%ld - %ld) failed ret: %d\n",
+						current->comm, current->pid, vmf->address, pfn, pfn+1,
+						r);
 				goto cont;
+			}
 			npage = pfn_to_page(pfn);
 			if (likely(page)) {
 				if (!pte || (pte && pte_pfn(*pte) != pfn)) {

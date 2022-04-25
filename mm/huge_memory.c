@@ -744,12 +744,42 @@ vm_fault_t do_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		return ret;
 	}
 	gfp = alloc_hugepage_direct_gfpmask(vma);
+
+#ifdef CONFIG_SMM
+	{
+		unsigned long pfn;
+		int ret;
+		if (!vmf->vma->vm_mm->smm_activate)
+			goto cont;
+		if (!(vmf->vma->vm_flags & VM_SMM_HEAP) &&
+				!(vmf->vma->vm_flags & VM_SMM_MMAP))
+			goto cont;
+
+		pfn = smm_va_to_pa(vmf->vma, haddr) >> PAGE_SHIFT;
+		if (pfn == 0)
+			goto cont;
+		ret = alloc_contig_range(pfn, pfn+HPAGE_PMD_SIZE/PAGE_SIZE, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+		if (ret) {
+			printk("[%s %d], do_huge_pmd_anonymous_page, addr:%#lx, alloc_contig_range: [%ld - %ld) failed ret: %d\n",
+					current->comm, current->pid, haddr, pfn, pfn+HPAGE_PMD_SIZE/PAGE_SIZE,
+					ret);
+			goto cont;
+		}
+		page = pfn_to_page(pfn);
+		prep_compound_page(page, HPAGE_PMD_ORDER);
+		goto scont;
+	}
+cont:
+#endif
 	page = alloc_hugepage_vma(gfp, vma, haddr, HPAGE_PMD_ORDER);
 	if (unlikely(!page)) {
 		count_vm_event(THP_FAULT_FALLBACK);
 		return VM_FAULT_FALLBACK;
 	}
 	prep_transhuge_page(page);
+#ifdef CONFIG_SMM
+scont:
+#endif
 	return __do_huge_pmd_anonymous_page(vmf, page, gfp);
 }
 
