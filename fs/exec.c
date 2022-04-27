@@ -388,16 +388,6 @@ static int bprm_mm_init(struct linux_binprm *bprm)
 	if (err)
 		goto err;
 
-#ifdef CONFIG_SMM
-	/* Once SMM is enabled, stack will always allocate from CMA area */
-	if (bprm->rlim_stack.rlim_cur < SMM_STACK_SIZE_LIMIT) {
-		mm->smm_stack_size = bprm->rlim_stack.rlim_cur;
-		smm_cma_reserve_stack(bprm->rlim_stack.rlim_cur, mm);
-	} else {
-		mm->smm_stack_size = SMM_STACK_SIZE_LIMIT;
-		smm_cma_reserve_stack(SMM_STACK_SIZE_LIMIT, mm);
-	}
-#endif
 	return 0;
 
 err:
@@ -441,6 +431,66 @@ static const char __user *get_user_arg_ptr(struct user_arg_ptr argv, int nr)
 
 	return native;
 }
+
+#ifdef CONFIG_SMM
+
+/*
+ * smm_checkenv() checks for SMM env to activate SMM and reserve stack CMA area for smm_activated programs
+ */
+static void smm_checkenv(struct user_arg_ptr argv, struct linux_binprm *bprm)
+{
+	int i = 0;
+	char *argbuff;
+	int max = MAX_ARG_STRINGS;
+
+	if (argv.ptr.native != NULL) {
+		for (;;) {
+			const char __user *p = get_user_arg_ptr(argv, i);
+			int len;
+
+			if (!p)
+				break;
+
+			if (IS_ERR(p))
+				return;
+
+			if (i >= max)
+				return;
+			++i;
+
+			len = strnlen_user(p, MAX_ARG_STRLEN);
+			argbuff = kmalloc(len, GFP_KERNEL);
+			if (copy_from_user(argbuff, p, len)) {
+				kfree(argbuff);
+				return;
+			}
+			if (strncmp(argbuff, "SMM", 3) == 0) {
+				bprm->mm->smm_mem_size = memparse(argbuff+4, NULL);
+				smm_cma_reserve_mem(bprm->mm->smm_mem_size, bprm->mm);
+				bprm->mm->smm_activate = 1;
+			}
+
+			kfree(argbuff);
+
+			if (fatal_signal_pending(current))
+				return;
+			cond_resched();
+		}
+	}
+
+	if (!bprm->mm->smm_activate)
+		return;
+	if (bprm->rlim_stack.rlim_cur < SMM_STACK_SIZE_LIMIT) {
+		bprm->mm->smm_stack_size = bprm->rlim_stack.rlim_cur;
+		smm_cma_reserve_stack(bprm->rlim_stack.rlim_cur, bprm->mm);
+	} else {
+		bprm->mm->smm_stack_size = SMM_STACK_SIZE_LIMIT;
+		smm_cma_reserve_stack(SMM_STACK_SIZE_LIMIT, bprm->mm);
+	}
+	return;
+}
+
+#endif
 
 /*
  * count() counts the number of strings in array ARGV.
@@ -586,21 +636,6 @@ static int copy_strings(int argc, struct user_arg_ptr argv,
 			str -= bytes_to_copy;
 			len -= bytes_to_copy;
 
-#ifdef CONFIG_SMM
-			{
-				char * argbuff = kmalloc(bytes_to_copy, GFP_KERNEL);
-				if (copy_from_user(argbuff, str, bytes_to_copy)) {
-					ret = -EFAULT;
-					goto out;
-				}
-				if (strncmp(argbuff, "SMM_MEM", 7) == 0) {
-					bprm->mm->smm_mem_size = memparse(argbuff+8, NULL);
-					smm_cma_reserve_mem(bprm->mm->smm_mem_size, bprm->mm);
-					bprm->mm->smm_activate = 1;
-				}
-				kfree(argbuff);
-			}
-#endif
 			if (!kmapped_page || kpos != (pos & PAGE_MASK)) {
 				struct page *page;
 
@@ -1928,6 +1963,9 @@ static int do_execveat_common(int fd, struct filename *filename,
 		goto out_free;
 	bprm->argc = retval;
 
+#ifdef CONFIG_SMM
+	smm_checkenv(envp, bprm);
+#endif
 	retval = count(envp, MAX_ARG_STRINGS);
 	if (retval < 0)
 		goto out_free;

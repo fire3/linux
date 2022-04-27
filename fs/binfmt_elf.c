@@ -1213,8 +1213,7 @@ out_free_interp:
 	current->mm->smm_code_size =
 		current->mm->smm_code_end_va - current->mm->smm_code_base_va;
 	if (current->mm->smm_activate) {
-		smm_cma_reserve_code(current->mm->smm_code_end_va -
-				current->mm->smm_code_base_va, current->mm);
+		smm_cma_reserve_code(current->mm->smm_code_size, current->mm);
 	}
 #endif
 
