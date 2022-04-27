@@ -3547,6 +3547,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 			if (ret == 0) {
 				//printk("do_anonymous_page stack contig: [%s %d], [%#lx] pfn: %#lx\n",current->comm, current->pid, vmf->address, pfn);
 				page = pfn_to_page(pfn);
+				clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
 			} else {
 				page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
 			}
@@ -3565,6 +3566,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
 			if (ret == 0) {
 				page = pfn_to_page(pfn);
+				clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
 			} else {
 				page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
 			}
