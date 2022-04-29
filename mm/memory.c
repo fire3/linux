@@ -3543,7 +3543,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	/* Allocate our own private page. */
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
-#ifdef CONFIG_SMM
+#if 0
 	if (vma->vm_flags & VM_SMM_STACK) {
 		unsigned long pfn;
 		int ret;
@@ -3597,8 +3597,34 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	} else {
 		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
 	}
-#else
+#endif
+
+#ifdef CONFIG_SMM
+	{
+		unsigned long pfn;
+		int ret;
+		if (vma->vm_flags & VM_SMM_CODE)
+			goto cont;
+		pfn = smm_va_to_pa(vma, vmf->address) >> PAGE_SHIFT;
+		if (pfn == 0)
+			goto cont;
+		page = pfn_to_page(pfn);
+		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
+				&vmf->ptl);
+		if (page_count(page) == 0) {
+			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+			clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
+			pte_unmap_unlock(vmf->pte, vmf->ptl);
+			goto scont;
+		}
+		pte_unmap_unlock(vmf->pte, vmf->ptl);
+		goto scont;
+	}
+cont:
+#endif
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+#ifdef CONFIG_SMM
+scont:
 #endif
 	if (!page)
 		goto oom;
