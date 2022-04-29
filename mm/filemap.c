@@ -2884,74 +2884,8 @@ void filemap_map_pages(struct vm_fault *vmf,
 		if (vmf->pte)
 			vmf->pte += xas.xa_index - last_pgoff;
 		last_pgoff = xas.xa_index;
-#if 0
-		{
-			unsigned long pfn = 0;
-			int r = 0;
-			struct page *npage = NULL;
-			pte_t * pte = NULL;
-			if (!vmf->vma->vm_mm->smm_activate)
-				goto cont;
-			if (!(vmf->vma->vm_flags & VM_SMM_CODE) &&
-					!(vmf->vma->vm_flags & VM_SMM_MMAP))
-				goto cont;
-			if (pmd_none(*vmf->pmd))
-				pte = NULL;
-			else
-				pte = pte_offset_map(vmf->vma->vm_mm, vmf->pmd, vmf->address);
-
-			pfn = smm_va_to_pa(vmf->vma, vmf->address) >> PAGE_SHIFT;
-
-			if (pfn == 0)
-				goto cont;
-#if 0
-			if (page_count(pfn_to_page(pfn)))
-				printk("[%s %d], filemap_map_pages, addr:%#lx, pfn: [%ld - %ld) pte: %#lx pte_pfn: %ld vmf pte: %#lx vmf pte_pfn: %ld, page_count: %d\n",
-						current->comm, current->pid, vmf->address, pfn, pfn+1, (unsigned long) pte,
-						pte ? pte_pfn(*pte): 0, (unsigned long)vmf->pte, vmf->pte ? pte_pfn(*vmf->pte) : 0, page_count(pfn_to_page(pfn)));
-#endif
-			if (pte && pte_pfn(*pte) == pfn) {
-				goto cont;
-			}
-
-			npage = pfn_to_page(pfn);
-
-			if (page_count(npage) == 0)
-				r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA,
-						GFP_HIGHUSER|__GFP_MOVABLE);
-			else {
-				/* Avoid allocate page_count >= 1 pages */
-
-				printk("[%s %d], filemap_map_pages, addr:%#lx, pfn: [%ld - %ld) pte: %#lx pte_pfn: %ld vmf pte: %#lx vmf pte_pfn: %ld, page_count: %d\n",
-						current->comm, current->pid, vmf->address, pfn, pfn+1, (unsigned long) pte,
-						pte ? pte_pfn(*pte): 0, (unsigned long)vmf->pte, vmf->pte ? pte_pfn(*vmf->pte) : 0, page_count(pfn_to_page(pfn)));
-
-				goto cont;
-			}
-
-			if (r != 0) {
-				printk("[%s %d], filemap_map_pages, addr:%#lx, alloc_contig_range: [%ld - %ld) failed ret: %d\n",
-						current->comm, current->pid, vmf->address, pfn, pfn+1,
-						r);
-				goto cont;
-			}
-			if (likely(page)) {
-				if (!pte || (pte && pte_pfn(*pte) != pfn)) {
-					/* Only copy first touched pages */
-					copy_user_highpage(npage, page, vmf->address, vmf->vma);
-				}
-				if (alloc_set_pte(vmf, npage))
-					goto unlock;
-				goto scont;
-			}
-cont:
-		}
-#endif
 		if (alloc_set_pte(vmf, page))
 			goto unlock;
-#ifdef CONFIG_SMM
-scont:
-#endif
 		unlock_page(head);
 		goto next;
 unlock:

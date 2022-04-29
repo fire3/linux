@@ -4094,7 +4094,6 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 	{
 		unsigned long pfn = 0;
 		struct page *npage = NULL;
-		pte_t * pte = NULL;
 		int r;
 		if (!vmf->vma->vm_mm->smm_activate)
 			goto cont;
