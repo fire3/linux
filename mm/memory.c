@@ -3267,6 +3267,12 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 	vm_fault_t ret = 0;
 	void *shadow = NULL;
 
+#ifdef CONFIG_SMM
+	if (vmf && vmf->vma && vmf->vma->vm_mm && vmf->vma->vm_mm->smm_activate) {
+		printk("do_swap_page [%s %d] %#lx\n",current->comm,current->pid, vmf->address);
+	}
+#endif
+
 	if (!pte_unmap_same(vma->vm_mm, vmf->pmd, vmf->pte, vmf->orig_pte))
 		goto out;
 
@@ -4014,6 +4020,10 @@ static vm_fault_t do_fault_around(struct vm_fault *vmf)
 	int off;
 	vm_fault_t ret = 0;
 
+#ifdef CONFIG_SMM
+	if (vmf && vmf->vma && vmf->vma->vm_mm && vmf->vma->vm_mm->smm_activate)
+		return 0;
+#endif
 	nr_pages = READ_ONCE(fault_around_bytes) >> PAGE_SHIFT;
 	mask = ~(nr_pages * PAGE_SIZE - 1) & PAGE_MASK;
 
@@ -4080,6 +4090,35 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 	ret = __do_fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		return ret;
+#ifdef CONFIG_SMM
+	{
+		unsigned long pfn = 0;
+		struct page *npage = NULL;
+		pte_t * pte = NULL;
+		int r;
+		if (!vmf->vma->vm_mm->smm_activate)
+			goto cont;
+		if (!(vmf->vma->vm_flags & VM_SMM_CODE) &&
+				!(vmf->vma->vm_flags & VM_SMM_MMAP))
+			goto cont;
+
+		pfn = smm_va_to_pa(vmf->vma, vmf->address) >> PAGE_SHIFT;
+		if (pfn == 0)
+			goto cont;
+		r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+		if (r)
+			goto cont;
+		npage = pfn_to_page(pfn);
+		if (likely(vmf->page)) {
+			copy_user_highpage(npage, vmf->page, vmf->address, vmf->vma);
+			unlock_page(vmf->page);
+			put_page(vmf->page);
+			vmf->page = npage;
+			lock_page(vmf->page);
+		}
+	}
+cont:
+#endif
 
 	ret |= finish_fault(vmf);
 	unlock_page(vmf->page);
@@ -4155,6 +4194,11 @@ static vm_fault_t do_shared_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	vm_fault_t ret, tmp;
+#ifdef CONFIG_SMM
+	if (vmf && vmf->vma && vmf->vma->vm_mm && vmf->vma->vm_mm->smm_activate) {
+		printk("[%s %d], do_shared_fault: %#lx\n", current->comm, current->pid, vmf->address);
+	}
+#endif
 
 	ret = __do_fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
@@ -4271,6 +4315,12 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	pte_t pte, old_pte;
 	bool was_writable = pte_savedwrite(vmf->orig_pte);
 	int flags = 0;
+#ifdef CONFIG_SMM
+	if (vmf && vmf->vma && vmf->vma->vm_mm && vmf->vma->vm_mm->smm_activate) {
+		printk("do_numa_page [%s %d] %#lx\n",current->comm,current->pid, vmf->address);
+	}
+#endif
+
 
 	/*
 	 * The "pte" at this point cannot be used safely without

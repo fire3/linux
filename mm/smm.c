@@ -125,7 +125,8 @@ void smm_cma_reserve_code(unsigned long size, struct mm_struct *mm)
 	size = round_up(size, PAGE_SIZE);
 	pfn = smm_cma_reserve(size / PAGE_SIZE, 0);
 
-	smm_dbg("SMM code reserved to pfn: %#lx, size: %#lx\n", pfn, size);
+	smm_dbg("[%s %d] SMM code reserved to pfn [%#lx - %#lx)\n",
+		current->comm, current->pid, pfn, pfn + size / PAGE_SIZE);
 
 	if (pfn != 0) {
 		mm->smm_code_base_pfn = pfn;
@@ -149,8 +150,9 @@ void smm_cma_reserve_stack(unsigned long size, struct mm_struct *mm)
 	if (pfn != 0) {
 		mm->smm_stack_base_pfn = pfn;
 		mm->smm_stack_page_count = size / PAGE_SIZE;
-		smm_dbg("SMM stack reserved to pfn: %#lx, size: %#lx\n", pfn,
-			size);
+		smm_dbg("[%s %d] SMM stack reserved to pfn: [%#lx- %#lx)\n",
+			current->comm, current->pid, pfn,
+			pfn + size / PAGE_SIZE);
 	} else {
 		mm->smm_stack_base_pfn = 0;
 		mm->smm_stack_page_count = 0;
@@ -172,8 +174,9 @@ void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
 	if (pfn != 0) {
 		mm->smm_mem_base_pfn = pfn;
 		mm->smm_mem_page_count = size / PAGE_SIZE;
-		smm_dbg("SMM heap and mmap reserved to pfn: %#lx, size: %#lx\n",
-			pfn, size);
+		smm_dbg("[%s %d] SMM heap and mmap reserved to pfn [%#lx - %#lx)\n",
+			current->comm, current->pid, pfn,
+			pfn + size / PAGE_SIZE);
 	} else {
 		mm->smm_mem_base_pfn = 0;
 		mm->smm_mem_page_count = 0;
@@ -187,14 +190,23 @@ void exit_smm(struct mm_struct *mm)
 	if (mm->smm_stack_base_pfn && mm->smm_stack_page_count) {
 		smm_cma_cancel(mm->smm_stack_base_pfn,
 			       mm->smm_stack_page_count);
+		smm_dbg("[%s %d] SMM cancel stack cma pfn [%#lx - %#lx).\n",
+			current->comm, current->pid, mm->smm_stack_base_pfn,
+			mm->smm_stack_base_pfn + mm->smm_stack_page_count);
 	}
 
 	if (mm->smm_mem_base_pfn && mm->smm_mem_page_count) {
 		smm_cma_cancel(mm->smm_mem_base_pfn, mm->smm_mem_page_count);
+		smm_dbg("[%s %d] SMM cancel heap and mmap cma pfn [%#lx - %#lx).\n",
+			current->comm, current->pid, mm->smm_mem_base_pfn,
+			mm->smm_mem_base_pfn + mm->smm_mem_page_count);
 	}
 
 	if (mm->smm_code_base_pfn && mm->smm_code_page_count) {
 		smm_cma_cancel(mm->smm_code_base_pfn, mm->smm_code_page_count);
+		smm_dbg("[%s %d] SMM cancel code cma pfn [%#lx - %#lx).\n",
+			current->comm, current->pid, mm->smm_code_base_pfn,
+			mm->smm_code_base_pfn + mm->smm_code_page_count);
 	}
 }
 
@@ -228,6 +240,11 @@ unsigned long smm_code_va_to_pa(struct mm_struct *mm, unsigned long va)
 {
 	unsigned long pa = 0;
 
+	if (!mm)
+		return 0;
+	if (!mm->smm_activate)
+		return 0;
+
 	if (mm->smm_code_base_va && mm->smm_code_end_va &&
 	    mm->smm_code_base_pfn && mm->smm_code_page_count) {
 		if (va < mm->smm_code_base_va || va >= mm->smm_code_end_va)
@@ -245,6 +262,11 @@ unsigned long smm_code_va_to_pa(struct mm_struct *mm, unsigned long va)
 unsigned long smm_stack_va_to_pa(struct mm_struct *mm, unsigned long va)
 {
 	unsigned long pa = 0;
+
+	if (!mm)
+		return 0;
+	if (!mm->smm_activate)
+		return 0;
 
 	if (mm->smm_stack_base_pfn && mm->smm_stack_base_va &&
 	    mm->smm_stack_page_count && mm->smm_stack_end_va) {
@@ -265,15 +287,22 @@ unsigned long smm_heap_va_to_pa(struct mm_struct *mm, unsigned long va)
 	unsigned long pa = 0;
 	unsigned long hugepage_offset = (~HPAGE_MASK & mm->smm_heap_base_va);
 
+	if (!mm)
+		return 0;
+	if (!mm->smm_activate)
+		return 0;
+
 	if (mm->smm_heap_base_va && mm->smm_heap_end_va &&
 	    mm->smm_mem_base_pfn && mm->smm_mem_page_count) {
 		if (va < mm->smm_heap_base_va || va >= mm->smm_heap_end_va)
 			return 0;
 
+		if (va >= mm->smm_mmap_base_va)
+			return 0;
+
 		pa = va - mm->smm_heap_base_va +
 		     (mm->smm_mem_base_pfn << PAGE_SHIFT) + hugepage_offset;
 
-		/* TODO: Check mmap and heap overlap! */
 		return pa;
 	}
 
@@ -286,8 +315,17 @@ unsigned long smm_mmap_va_to_pa(struct mm_struct *mm, unsigned long va)
 	unsigned long hugepage_offset =
 		HPAGE_SIZE - (~HPAGE_MASK & mm->smm_mmap_end_va);
 
+	if (!mm)
+		return 0;
+	if (!mm->smm_activate)
+		return 0;
+
 	if (mm->smm_mem_base_pfn && mm->smm_mmap_base_va &&
 	    mm->smm_mem_page_count && mm->smm_stack_end_va) {
+
+		if (va < mm->smm_heap_end_va)
+			return 0;
+
 		pa = ((mm->smm_mem_base_pfn + mm->smm_mem_page_count)
 		      << PAGE_SHIFT) -
 		     hugepage_offset - (mm->smm_mmap_end_va - va);
