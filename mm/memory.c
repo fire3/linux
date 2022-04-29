@@ -3484,7 +3484,8 @@ out_release:
 	}
 	return ret;
 }
-
+extern void smm_lock(void);
+extern void smm_unlock(void);
 /*
  * We enter with non-exclusive mmap_lock (to exclude vma changes,
  * but allow concurrent faults), and pte mapped but not yet locked.
@@ -3602,7 +3603,9 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 #ifdef CONFIG_SMM
 	{
 		unsigned long pfn;
-		int r;
+		int r = 1;
+		unsigned long flags;
+
 		if (vma->vm_flags & VM_SMM_CODE)
 			goto cont;
 		pfn = smm_va_to_pa(vma, vmf->address) >> PAGE_SHIFT;
@@ -3616,19 +3619,23 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		if (vma->vm_flags & VM_WRITE)
 			entry = pte_mkwrite(pte_mkdirty(entry));
 
-		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
-				&vmf->ptl);
+		smm_lock();
+		if (page_count(page) == 0)
+			r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+		smm_unlock();
+
+		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address, &vmf->ptl);
+		if (!pte_none(*vmf->pte)) {
+			update_mmu_cache(vma, vmf->address, vmf->pte);
+			pte_unmap_unlock(vmf->pte, vmf->ptl);
+			return ret;
+		}
 		ret = check_stable_address_space(vma->vm_mm);
 		if (ret) {
 			pte_unmap_unlock(vmf->pte, vmf->ptl);
 			return ret;
 		}
-		if (!pte_none(*vmf->pte)) {
-			pte_unmap_unlock(vmf->pte, vmf->ptl);
-			return ret;
-		}
-		r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
-		if (r == 0) {
+		if (page_count(page) == 1) {
 			clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
 			__SetPageUptodate(page);
 			inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);

@@ -359,3 +359,13 @@ unsigned long smm_va_to_pa(struct vm_area_struct *vma, unsigned long va)
 
 	return 0;
 }
+
+void smm_lock(void)
+{
+	mutex_lock(&smm_cma->lock);
+}
+
+void smm_unlock(void)
+{
+	mutex_unlock(&smm_cma->lock);
+}
