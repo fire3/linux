@@ -3602,30 +3602,51 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 #ifdef CONFIG_SMM
 	{
 		unsigned long pfn;
-		int ret;
+		int r;
 		if (vma->vm_flags & VM_SMM_CODE)
 			goto cont;
 		pfn = smm_va_to_pa(vma, vmf->address) >> PAGE_SHIFT;
 		if (pfn == 0)
 			goto cont;
+
 		page = pfn_to_page(pfn);
+
+		entry = mk_pte(page, vma->vm_page_prot);
+		entry = pte_sw_mkyoung(entry);
+		if (vma->vm_flags & VM_WRITE)
+			entry = pte_mkwrite(pte_mkdirty(entry));
+
 		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
 				&vmf->ptl);
-		if (page_count(page) == 0) {
-			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
-			clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
+		ret = check_stable_address_space(vma->vm_mm);
+		if (ret) {
 			pte_unmap_unlock(vmf->pte, vmf->ptl);
-			goto scont;
+			return ret;
+		}
+		if (!pte_none(*vmf->pte)) {
+			pte_unmap_unlock(vmf->pte, vmf->ptl);
+			return ret;
+		}
+		r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+		if (r == 0) {
+			clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
+			__SetPageUptodate(page);
+			inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
+			page_add_new_anon_rmap(page, vma, vmf->address, false);
+			lru_cache_add_inactive_or_unevictable(page, vma);
+			set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
+
+			/* No need to invalidate - it was non-present before */
+			update_mmu_cache(vma, vmf->address, vmf->pte);
+			pte_unmap_unlock(vmf->pte, vmf->ptl);
+			return ret;
+
 		}
 		pte_unmap_unlock(vmf->pte, vmf->ptl);
-		goto scont;
 	}
 cont:
 #endif
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-#ifdef CONFIG_SMM
-scont:
-#endif
 	if (!page)
 		goto oom;
 
@@ -3651,7 +3672,6 @@ scont:
 		update_mmu_cache(vma, vmf->address, vmf->pte);
 		goto release;
 	}
-
 	ret = check_stable_address_space(vma->vm_mm);
 	if (ret)
 		goto release;
