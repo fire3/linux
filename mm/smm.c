@@ -339,6 +339,9 @@ unsigned long smm_va_to_pa(struct vm_area_struct *vma, unsigned long va)
 	if (!vma)
 		return 0;
 
+	if (!vma->vm_mm->smm_activate)
+		return 0;
+
 	if ((va < vma->vm_start) || (va >= vma->vm_end))
 		return 0;
 
