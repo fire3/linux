@@ -51,6 +51,7 @@
 
 static unsigned long smm_reserve_size __initdata;
 static bool smm_reserve_called __initdata;
+static DEFINE_MUTEX(smm_mutex);
 
 #define smm_dbg(fmt, ...)                                                      \
 	do {                                                                   \
@@ -362,10 +363,10 @@ unsigned long smm_va_to_pa(struct vm_area_struct *vma, unsigned long va)
 
 void smm_lock(void)
 {
-	mutex_lock(&smm_cma->lock);
+	mutex_lock(&smm_mutex);
 }
 
 void smm_unlock(void)
 {
-	mutex_unlock(&smm_cma->lock);
+	mutex_unlock(&smm_mutex);
 }

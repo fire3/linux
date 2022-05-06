@@ -50,3 +50,23 @@ SYM_FUNC_START(clear_page_erms)
 	ret
 SYM_FUNC_END(clear_page_erms)
 EXPORT_SYMBOL_GPL(clear_page_erms)
+
+/*
+ * Zero memory using non temporal stores, bypassing the cache.
+ * Requires an `sfence` (wmb()) afterwards.
+ * %rdi - destination.
+ * %rsi - page size. Must be 64 bit aligned.
+*/
+SYM_FUNC_START(__clear_page_nt)
+	leaq	(%rdi,%rsi), %rdx
+	xorl	%eax, %eax
+	.p2align 4,,10
+	.p2align 3
+.L2:
+	movnti	%rax, (%rdi)
+	addq	$8, %rdi
+	cmpq	%rdx, %rdi
+	jne	.L2
+	ret
+SYM_FUNC_END(__clear_page_nt)
+EXPORT_SYMBOL(__clear_page_nt)

@@ -637,4 +637,7 @@ void free_contig_range(unsigned long pfn, unsigned int nr_pages);
 extern void init_cma_reserved_pageblock(struct page *page);
 #endif
 
+#ifdef CONFIG_SMM
+struct page *take_smm_page_vma(gfp_t gfp_flags, struct vm_area_struct *vma, unsigned long address);
+#endif
 #endif /* __LINUX_GFP_H */

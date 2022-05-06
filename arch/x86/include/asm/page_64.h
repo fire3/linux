@@ -44,6 +44,16 @@ void clear_page_orig(void *page);
 void clear_page_rep(void *page);
 void clear_page_erms(void *page);
 
+#ifdef CONFIG_SMM
+#include <asm/barrier.h>
+void __clear_page_nt(void *page, u64 page_size);
+static inline void clear_page_nt(void *page)
+{
+	__clear_page_nt(page, PAGE_SIZE);
+	wmb();
+}
+#endif
+
 static inline void clear_page(void *page)
 {
 	alternative_call_2(clear_page_orig,

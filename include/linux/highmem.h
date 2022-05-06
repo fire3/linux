@@ -284,6 +284,15 @@ static inline void clear_highpage(struct page *page)
 	kunmap_atomic(kaddr);
 }
 
+#ifdef CONFIG_SMM
+static inline void clear_highpage_nt(struct page *page)
+{
+	void *kaddr = kmap_atomic(page);
+	clear_page_nt(kaddr);
+	kunmap_atomic(kaddr);
+}
+#endif
+
 static inline void zero_user_segments(struct page *page,
 	unsigned start1, unsigned end1,
 	unsigned start2, unsigned end2)

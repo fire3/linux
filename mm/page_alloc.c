@@ -8887,3 +8887,118 @@ bool take_page_off_buddy(struct page *page)
 	return ret;
 }
 #endif
+
+#ifdef CONFIG_SMM
+/*
+ * Break down a higher-order page in sub-pages, and keep our target out of
+ * buddy allocator.
+ */
+static void smm_break_down_buddy_pages(struct zone *zone, struct page *page,
+				   struct page *target, int low, int high,
+				   int migratetype)
+{
+	unsigned long size = 1 << high;
+	struct page *current_buddy, *next_page;
+
+	while (high > low) {
+		high--;
+		size >>= 1;
+
+		if (target >= &page[size]) {
+			next_page = page + size;
+			current_buddy = page;
+		} else {
+			next_page = page;
+			current_buddy = page + size;
+		}
+
+		if (set_page_guard(zone, current_buddy, high, migratetype))
+			continue;
+
+		if (current_buddy != target) {
+			add_to_free_list(current_buddy, zone, high, migratetype);
+			set_buddy_order(current_buddy, high);
+			page = next_page;
+		}
+	}
+}
+
+struct page *take_smm_page_vma(gfp_t gfp_flags, struct vm_area_struct *vma, unsigned long address)
+{
+	unsigned long flags;
+	unsigned int order;
+	unsigned int alloc_flags;
+	unsigned long pfn;
+
+	int ret = false;
+	struct page *page = NULL;
+
+	struct zone *zone;
+
+
+	pfn = smm_va_to_pa(vma, address) >> PAGE_SHIFT;
+
+	if (pfn == 0) {
+		return NULL;
+	}
+
+	page = pfn_to_page(pfn);
+	zone = page_zone(page);
+	alloc_flags = gfp_to_alloc_flags(gfp_flags);
+
+	spin_lock_irqsave(&zone->lock, flags);
+
+	for (order = 0; order < MAX_ORDER; order++) {
+		struct page *page_head = page - (pfn & ((1 << order) - 1));
+		int page_order = buddy_order(page_head);
+
+		if (PageBuddy(page_head) && page_order >= order) {
+			unsigned long pfn_head = page_to_pfn(page_head);
+			int migratetype = get_pfnblock_migratetype(page_head,
+					pfn_head);
+
+			del_page_from_free_list(page_head, zone, page_order);
+			smm_break_down_buddy_pages(zone, page_head, page, 0,
+					page_order, migratetype);
+			ret = true;
+			break;
+		}
+		if (page_count(page_head) > 0) {
+			break;
+		}
+	}
+	if (ret) {
+		page->smm_owner = (void *)vma->vm_mm;
+		prep_new_page(page, 0, gfp_flags, alloc_flags);
+		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
+		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
+		spin_unlock_irqrestore(&zone->lock, flags);
+		if (gfp_flags & __GFP_ZERO)
+			clear_highpage(page);
+	} else {
+		spin_unlock_irqrestore(&zone->lock, flags);
+#if 0
+		printk("[%s %#lx] take_smm_page_vma, alloc_contig: %#lx,  page: %p %d %#lx\n",
+				current->comm, (unsigned long)current->mm, address,
+				pfn_to_page(pfn), page_count(pfn_to_page(pfn)), (unsigned long)(pfn_to_page(pfn)->smm_owner)) ;
+#endif
+		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+		if (ret == 0) {
+			page = pfn_to_page(pfn);
+			if (gfp_flags & __GFP_ZERO)
+				clear_highpage(page);
+		} else {
+#if 1
+			page = pfn_to_page(pfn);
+			printk("[%s %#lx] take_smm_page_vma [%#lx - %#lx], addr: %#lx failed, page: %ld (%#lx %d %d)\n",
+					current->comm, (unsigned long)current->mm, vma->vm_start, vma->vm_end,
+					address,page_to_pfn(page), (unsigned long)page->smm_owner, page_count(page), PageBuddy(page));
+#endif
+			page = NULL;
+		}
+
+	}
+
+	return page;
+}
+#endif

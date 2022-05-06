@@ -3078,8 +3078,8 @@ static vm_fault_t do_wp_page(struct vm_fault *vmf)
 		pte_unmap_unlock(vmf->pte, vmf->ptl);
 		return handle_userfault(vmf, VM_UFFD_WP);
 	}
-
-#ifdef CONFIG_SMM
+#if 0
+//#ifdef CONFIG_SMM
 	{
 		unsigned long pfn;
 		if (!vmf->vma->vm_mm->smm_activate)
@@ -3484,8 +3484,11 @@ out_release:
 	}
 	return ret;
 }
+#ifdef CONFIG_SMM
 extern void smm_lock(void);
 extern void smm_unlock(void);
+extern int take_smm_page(int pfn, gfp_t gfp_flags);
+#endif
 /*
  * We enter with non-exclusive mmap_lock (to exclude vma changes,
  * but allow concurrent faults), and pte mapped but not yet locked.
@@ -3600,11 +3603,9 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	}
 #endif
 
-#ifdef CONFIG_SMM
+#if 1
 	{
 		unsigned long pfn;
-		int r = 1;
-		unsigned long flags;
 
 		if (vma->vm_flags & VM_SMM_CODE)
 			goto cont;
@@ -3619,24 +3620,24 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		if (vma->vm_flags & VM_WRITE)
 			entry = pte_mkwrite(pte_mkdirty(entry));
 
+		//vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address, &vmf->ptl);
+		vmf->pte = pte_offset_map(vmf->pmd, vmf->address);
 		smm_lock();
-		if (page_count(page) == 0)
-			r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
-		smm_unlock();
-
-		vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address, &vmf->ptl);
-		if (!pte_none(*vmf->pte)) {
-			update_mmu_cache(vma, vmf->address, vmf->pte);
-			pte_unmap_unlock(vmf->pte, vmf->ptl);
-			return ret;
-		}
 		ret = check_stable_address_space(vma->vm_mm);
 		if (ret) {
-			pte_unmap_unlock(vmf->pte, vmf->ptl);
+		//	pte_unmap_unlock(vmf->pte, vmf->ptl);
+			smm_unlock();
 			return ret;
 		}
-		if (page_count(page) == 1) {
-			clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
+		if (!pte_none(*vmf->pte)) {
+			//pte_unmap_unlock(vmf->pte, vmf->ptl);
+			smm_unlock();
+			return ret;
+		}
+		//r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
+		page = take_smm_page_vma(GFP_HIGHUSER_MOVABLE | __GFP_ZERO, vma, vmf->address);
+
+		if (page) {
 			__SetPageUptodate(page);
 			inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
 			page_add_new_anon_rmap(page, vma, vmf->address, false);
@@ -3645,14 +3646,17 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 
 			/* No need to invalidate - it was non-present before */
 			update_mmu_cache(vma, vmf->address, vmf->pte);
-			pte_unmap_unlock(vmf->pte, vmf->ptl);
+			//pte_unmap_unlock(vmf->pte, vmf->ptl);
+			smm_unlock();
 			return ret;
-
 		}
-		pte_unmap_unlock(vmf->pte, vmf->ptl);
+
+		//pte_unmap_unlock(vmf->pte, vmf->ptl);
+		smm_unlock();
 	}
 cont:
 #endif
+
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
 	if (!page)
 		goto oom;
@@ -4143,7 +4147,7 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 	ret = __do_fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		return ret;
-#ifdef CONFIG_SMM
+#if 0
 	{
 		unsigned long pfn = 0;
 		struct page *npage = NULL;
@@ -4186,7 +4190,7 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 
 	if (unlikely(anon_vma_prepare(vma)))
 		return VM_FAULT_OOM;
-#ifdef CONFIG_SMM
+#if 0
 	{
 		unsigned long pfn = 0;
 		int r;
@@ -4246,11 +4250,6 @@ static vm_fault_t do_shared_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	vm_fault_t ret, tmp;
-#ifdef CONFIG_SMM
-	if (vmf && vmf->vma && vmf->vma->vm_mm && vmf->vma->vm_mm->smm_activate) {
-		printk("[%s %d], do_shared_fault: %#lx\n", current->comm, current->pid, vmf->address);
-	}
-#endif
 
 	ret = __do_fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
@@ -4367,12 +4366,6 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	pte_t pte, old_pte;
 	bool was_writable = pte_savedwrite(vmf->orig_pte);
 	int flags = 0;
-#ifdef CONFIG_SMM
-	if (vmf && vmf->vma && vmf->vma->vm_mm && vmf->vma->vm_mm->smm_activate) {
-		printk("do_numa_page [%s %d] %#lx\n",current->comm,current->pid, vmf->address);
-	}
-#endif
-
 
 	/*
 	 * The "pte" at this point cannot be used safely without
