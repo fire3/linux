@@ -3156,6 +3156,9 @@ out:
 	if (flags & VM_LOCKED)
 		mm->locked_vm += (len >> PAGE_SHIFT);
 	vma->vm_flags |= VM_SOFTDIRTY;
+#ifdef CONFIG_SMM
+	vma->vm_flags |= VM_SMM_HEAP;
+#endif
 	return 0;
 }
 
