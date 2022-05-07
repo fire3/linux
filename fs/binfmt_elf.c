@@ -1209,14 +1209,6 @@ out_free_interp:
 		}
 	}
 
-#ifdef CONFIG_SMM
-	current->mm->smm_code_size =
-		current->mm->smm_code_end_va - current->mm->smm_code_base_va;
-	if (current->mm->smm_activate) {
-		smm_cma_reserve_code(current->mm->smm_code_size, current->mm);
-	}
-#endif
-
 
 	e_entry = elf_ex->e_entry + load_bias;
 	elf_bss += load_bias;
@@ -1225,6 +1217,17 @@ out_free_interp:
 	end_code += load_bias;
 	start_data += load_bias;
 	end_data += load_bias;
+
+#ifdef CONFIG_SMM
+	current->mm->smm_code_size =
+		current->mm->smm_code_end_va - current->mm->smm_code_base_va;
+	current->mm->smm_heap_base_va = round_up(elf_bss, PAGE_SIZE);
+	if (current->mm->smm_activate) {
+		smm_cma_reserve_code(current->mm->smm_code_size, current->mm);
+	}
+#endif
+
+
 
 	/* Calling set_brk effectively mmaps the pages that we need
 	 * for the bss and break sections.  We must do this before

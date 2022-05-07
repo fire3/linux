@@ -284,7 +284,6 @@ success:
 	if (next) {
 		next->vm_flags = next->vm_flags | VM_SMM_HEAP;
 	}
-	mm->smm_heap_base_va = mm->start_brk;
 	mm->smm_heap_end_va = mm->brk;
 #endif
 	return brk;
