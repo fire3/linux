@@ -3078,8 +3078,7 @@ static vm_fault_t do_wp_page(struct vm_fault *vmf)
 		pte_unmap_unlock(vmf->pte, vmf->ptl);
 		return handle_userfault(vmf, VM_UFFD_WP);
 	}
-#if 0
-//#ifdef CONFIG_SMM
+#ifdef CONFIG_SMM
 	{
 		unsigned long pfn;
 		if (!vmf->vma->vm_mm->smm_activate)
@@ -4105,7 +4104,7 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 }
 
 
-extern struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, unsigned long address);
+extern struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, struct vm_fault *vmf);
 
 static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 {
@@ -4137,7 +4136,7 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 cont:
 #endif
 #ifdef CONFIG_SMM
-	vmf->cow_page = smm_alloc_page_vma_highuser_movable(vma, vmf->address);
+	vmf->cow_page = smm_alloc_page_vma_highuser_movable(vma, vmf);
 #else
 	vmf->cow_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
 #endif

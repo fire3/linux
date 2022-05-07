@@ -8960,7 +8960,6 @@ static bool take_smm_page_off_buddy(struct page *page)
 		if (page_count(page_head) > 0)
 			break;
 	}
-unlock:
 	spin_unlock_irqrestore(&zone->lock, flags);
 	return ret;
 }
@@ -9060,18 +9059,6 @@ void smm_do_read_fault(struct vm_fault *vmf)
 		lock_page(vmf->page);
 	} else {
 
-#if 0
-		pte = pte_offset_map(vmf->pmd, vmf->address);
-		if (!pte_none(*pte) && pte_pfn(*pte) == pfn) {
-			unlock_page(vmf->page);
-			put_page(vmf->page);
-			vmf->page = page;
-			lock_page(vmf->page);
-
-			get_page(page);
-			return;
-		}
-#endif
 		smm_lock();
 		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
 		smm_unlock();
@@ -9085,17 +9072,21 @@ void smm_do_read_fault(struct vm_fault *vmf)
 			lock_page(vmf->page);
 		} else {
 			//TODO: check page owner???
-			unlock_page(vmf->page);
-			put_page(vmf->page);
-			vmf->page = page;
-			lock_page(vmf->page);
+			pte = pte_offset_map(vmf->pmd, vmf->address);
+			if (!pte_none(*pte) && pte_pfn(*pte) == pfn) {
+				unlock_page(vmf->page);
+				put_page(vmf->page);
+				vmf->page = page;
+				lock_page(vmf->page);
 
-			get_page(page);
+				get_page(page);
+				return;
+			}
 		}
 	}
 }
 
-struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, unsigned long address)
+struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	unsigned long flags;
 	unsigned int alloc_flags;
@@ -9104,6 +9095,8 @@ struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, uns
 	int ret = false;
 	struct page *page = NULL;
 	struct zone *zone;
+	pte_t *pte;
+	unsigned long address = vmf->address;
 
 
 	pfn = smm_va_to_pa(vma, address) >> PAGE_SHIFT;
@@ -9134,7 +9127,12 @@ struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, uns
 			return page;
 		} else {
 			//TODO: check page owner???
-			get_page(page);
+			pte = pte_offset_map(vmf->pmd, vmf->address);
+			if (!pte_none(*pte) && pte_pfn(*pte) == pfn) {
+				get_page(page);
+			} else {
+				page = NULL;
+			}
 		}
 	}
 
