@@ -370,3 +370,13 @@ void smm_unlock(void)
 {
 	mutex_unlock(&smm_mutex);
 }
+
+void set_smm_page_myself(struct page *page)
+{
+	page->smm_owner = (void *)current->mm->pgd;
+}
+
+bool is_smm_page_myself(struct page *page)
+{
+	return ((void *)current->mm->pgd == page->smm_owner);
+}

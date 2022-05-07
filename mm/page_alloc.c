@@ -8889,6 +8889,11 @@ bool take_page_off_buddy(struct page *page)
 #endif
 
 #ifdef CONFIG_SMM
+extern void smm_lock(void);
+extern void smm_unlock(void);
+extern void set_smm_page_myself(struct page *page);
+extern bool is_smm_page_myself(struct page *page);
+
 /*
  * Break down a higher-order page in sub-pages, and keep our target out of
  * buddy allocator.
@@ -8963,8 +8968,7 @@ static bool take_smm_page_off_buddy(struct page *page)
 	spin_unlock_irqrestore(&zone->lock, flags);
 	return ret;
 }
-extern void smm_lock(void);
-extern void smm_unlock(void);
+
 struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, unsigned long address)
 {
 	unsigned long flags;
@@ -8991,20 +8995,30 @@ struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, 
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
+		set_smm_page_myself(page);
 		prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
 		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
 		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
 		spin_unlock_irqrestore(&zone->lock, flags);
 		clear_highpage(page);
 	} else {
+
 		smm_lock();
 		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
-		smm_unlock();
 		if (ret == 0) {
+			set_smm_page_myself(page);
+			smm_unlock();
 			clear_highpage(page);
 		} else {
 			//TODO: check page owner???
-			get_page(page);
+			printk("failed smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
+			if (is_smm_page_myself(page)) {
+				smm_unlock();
+				get_page(page);
+			} else {
+				smm_unlock();
+				page = alloc_zeroed_user_highpage_movable(vma, address);
+			}
 		}
 	}
 	return page;
@@ -9048,9 +9062,11 @@ void smm_do_read_fault(struct vm_fault *vmf)
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
+		set_smm_page_myself(page);
 		prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
 		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
 		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
+
 		spin_unlock_irqrestore(&zone->lock, flags);
 		copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
 		unlock_page(vmf->page);
@@ -9058,6 +9074,15 @@ void smm_do_read_fault(struct vm_fault *vmf)
 		vmf->page = page;
 		lock_page(vmf->page);
 	} else {
+
+		if (is_smm_page_myself(page)) {
+			unlock_page(vmf->page);
+			put_page(vmf->page);
+			vmf->page = page;
+			lock_page(vmf->page);
+			get_page(page);
+			return;
+		}
 
 		smm_lock();
 		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
@@ -9072,6 +9097,7 @@ void smm_do_read_fault(struct vm_fault *vmf)
 			lock_page(vmf->page);
 		} else {
 			//TODO: check page owner???
+			printk("failed smm_do_read_fault: [%s %d], address:%#lx\n",current->comm, current->pid, address);
 			pte = pte_offset_map(vmf->pmd, vmf->address);
 			if (!pte_none(*pte) && pte_pfn(*pte) == pfn) {
 				unlock_page(vmf->page);
@@ -9113,7 +9139,7 @@ struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, str
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
-		page->smm_owner = (void *)vma->vm_mm;
+		set_smm_page_myself(page);
 		prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
 		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
 		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
@@ -9127,6 +9153,7 @@ struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, str
 			return page;
 		} else {
 			//TODO: check page owner???
+			printk("failed smm_alloc_page_vma_highuser_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
 			pte = pte_offset_map(vmf->pmd, vmf->address);
 			if (!pte_none(*pte) && pte_pfn(*pte) == pfn) {
 				get_page(page);

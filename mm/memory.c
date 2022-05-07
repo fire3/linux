@@ -3483,11 +3483,7 @@ out_release:
 	}
 	return ret;
 }
-#ifdef CONFIG_SMM
-extern void smm_lock(void);
-extern void smm_unlock(void);
-extern struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, unsigned long address);
-#endif
+
 /*
  * We enter with non-exclusive mmap_lock (to exclude vma changes,
  * but allow concurrent faults), and pte mapped but not yet locked.
@@ -4070,9 +4066,6 @@ out:
 	return ret;
 }
 
-#ifdef CONFIG_SMM
-extern void smm_do_read_fault(struct vm_fault *vmf);
-#endif
 
 static vm_fault_t do_read_fault(struct vm_fault *vmf)
 {
@@ -4104,7 +4097,6 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 }
 
 
-extern struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, struct vm_fault *vmf);
 
 static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 {

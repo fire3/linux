@@ -21,5 +21,12 @@ extern unsigned long smm_heap_va_to_pa(struct mm_struct *mm, unsigned long va);
 extern unsigned long smm_mmap_va_to_pa(struct mm_struct *mm, unsigned long va);
 extern unsigned long smm_va_to_pa(struct vm_area_struct *vma, unsigned long va);
 extern void mm_init_smm(struct mm_struct *mm);
+
+extern void smm_lock(void);
+extern void smm_unlock(void);
+
+extern void smm_do_read_fault(struct vm_fault *vmf);
+extern struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, unsigned long address);
+extern struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, struct vm_fault *vmf);
 #endif /* __KERNEL__ */
 #endif /* _LINUX_SMM_H */
