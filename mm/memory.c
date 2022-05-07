@@ -3487,7 +3487,7 @@ out_release:
 #ifdef CONFIG_SMM
 extern void smm_lock(void);
 extern void smm_unlock(void);
-extern int take_smm_page(int pfn, gfp_t gfp_flags);
+extern struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, unsigned long address);
 #endif
 /*
  * We enter with non-exclusive mmap_lock (to exclude vma changes,
@@ -3548,62 +3548,7 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
 #if 0
-	if (vma->vm_flags & VM_SMM_STACK) {
-		unsigned long pfn;
-		int ret;
-		pfn = smm_stack_va_to_pa(vma->vm_mm, vmf->address) >> PAGE_SHIFT;
-		if (pfn != 0) {
-			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
-			if (ret == 0) {
-				//printk("do_anonymous_page stack contig: [%s %d], [%#lx] pfn: %#lx\n",current->comm, current->pid, vmf->address, pfn);
-				page = pfn_to_page(pfn);
-				clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
-			} else {
-				page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-			}
-		} else {
-			page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-			/*
-			if (page)
-				printk("do_anonymous_page highpage: [%s %d], [%#lx] pfn: %#lx\n",current->comm, current->pid, vmf->address, page_to_pfn(page));
-			*/
-		}
-	} else if (vma->vm_flags & VM_SMM_HEAP) {
-		unsigned long pfn;
-		int ret;
-		pfn = smm_heap_va_to_pa(vma->vm_mm, vmf->address) >> PAGE_SHIFT;
-		if  (pfn != 0) {
-			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
-			if (ret == 0) {
-				page = pfn_to_page(pfn);
-				clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
-			} else {
-				page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-			}
-		} else  {
-			page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-		}
-	} else if (vma->vm_flags & VM_SMM_MMAP) {
-		unsigned long pfn;
-		int ret;
-		pfn = smm_mmap_va_to_pa(vma->vm_mm, vmf->address) >> PAGE_SHIFT;
-		if  (pfn != 0) {
-			ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
-			if (ret == 0) {
-				page = pfn_to_page(pfn);
-				clear_highpage(page); /* should be zeroed or else will cause ld.so bug*/
-			} else {
-				page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-			}
-		} else {
-			page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-		}
-	} else {
-		page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-	}
-#endif
-
-#if 1
+//#ifdef CONFIG_SMM
 	{
 		unsigned long pfn;
 
@@ -3620,21 +3565,17 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 		if (vma->vm_flags & VM_WRITE)
 			entry = pte_mkwrite(pte_mkdirty(entry));
 
-		//vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address, &vmf->ptl);
 		vmf->pte = pte_offset_map(vmf->pmd, vmf->address);
 		smm_lock();
 		ret = check_stable_address_space(vma->vm_mm);
 		if (ret) {
-		//	pte_unmap_unlock(vmf->pte, vmf->ptl);
 			smm_unlock();
 			return ret;
 		}
 		if (!pte_none(*vmf->pte)) {
-			//pte_unmap_unlock(vmf->pte, vmf->ptl);
 			smm_unlock();
 			return ret;
 		}
-		//r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
 		page = take_smm_page_vma(GFP_HIGHUSER_MOVABLE | __GFP_ZERO, vma, vmf->address);
 
 		if (page) {
@@ -3646,18 +3587,20 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 
 			/* No need to invalidate - it was non-present before */
 			update_mmu_cache(vma, vmf->address, vmf->pte);
-			//pte_unmap_unlock(vmf->pte, vmf->ptl);
 			smm_unlock();
 			return ret;
 		}
 
-		//pte_unmap_unlock(vmf->pte, vmf->ptl);
 		smm_unlock();
 	}
 cont:
 #endif
 
+#ifdef CONFIG_SMM
+	page = smm_alloc_zeroed_user_highpage_movable(vma, vmf->address);
+#else
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
+#endif
 	if (!page)
 		goto oom;
 
@@ -4128,6 +4071,10 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_SMM
+extern void smm_do_read_fault(struct vm_fault *vmf);
+#endif
+
 static vm_fault_t do_read_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
@@ -4147,41 +4094,18 @@ static vm_fault_t do_read_fault(struct vm_fault *vmf)
 	ret = __do_fault(vmf);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		return ret;
-#if 0
-	{
-		unsigned long pfn = 0;
-		struct page *npage = NULL;
-		int r;
-		if (!vmf->vma->vm_mm->smm_activate)
-			goto cont;
-		if (!(vmf->vma->vm_flags & VM_SMM_CODE) &&
-				!(vmf->vma->vm_flags & VM_SMM_MMAP))
-			goto cont;
-
-		pfn = smm_va_to_pa(vmf->vma, vmf->address) >> PAGE_SHIFT;
-		if (pfn == 0)
-			goto cont;
-		r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER|__GFP_MOVABLE);
-		if (r)
-			goto cont;
-		npage = pfn_to_page(pfn);
-		if (likely(vmf->page)) {
-			copy_user_highpage(npage, vmf->page, vmf->address, vmf->vma);
-			unlock_page(vmf->page);
-			put_page(vmf->page);
-			vmf->page = npage;
-			lock_page(vmf->page);
-		}
-	}
-cont:
+#ifdef CONFIG_SMM
+	smm_do_read_fault(vmf);
 #endif
-
 	ret |= finish_fault(vmf);
 	unlock_page(vmf->page);
 	if (unlikely(ret & (VM_FAULT_ERROR | VM_FAULT_NOPAGE | VM_FAULT_RETRY)))
 		put_page(vmf->page);
 	return ret;
 }
+
+
+extern struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, unsigned long address);
 
 static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 {
@@ -4191,9 +4115,9 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 	if (unlikely(anon_vma_prepare(vma)))
 		return VM_FAULT_OOM;
 #if 0
+//#ifdef CONFIG_SMM
 	{
-		unsigned long pfn = 0;
-		int r;
+		struct page *page;
 
 		if (!vmf->vma->vm_mm->smm_activate)
 			goto cont;
@@ -4201,24 +4125,25 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 				!(vmf->vma->vm_flags & VM_SMM_MMAP))
 			goto cont;
 
-		pfn = smm_va_to_pa(vmf->vma, vmf->address) >> PAGE_SHIFT;
-		if (pfn == 0)
-			goto cont;
-		r = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA,
-				GFP_HIGHUSER|__GFP_MOVABLE);
-		if (r != 0)
-			goto cont;
-		vmf->cow_page = pfn_to_page(pfn);
-		goto scont;
+		page = take_smm_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
+		if (page)
+			vmf->cow_page = page;
+		else {
+			printk("do_cow_fault take_smm_page_vma failed\n");
+			vmf->cow_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
+			goto scont;
+		}
 	}
 cont:
 #endif
+#ifdef CONFIG_SMM
+	vmf->cow_page = smm_alloc_page_vma_highuser_movable(vma, vmf->address);
+#else
 	vmf->cow_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
+#endif
+
 	if (!vmf->cow_page)
 		return VM_FAULT_OOM;
-#ifdef CONFIG_SMM
-scont:
-#endif
 
 	if (mem_cgroup_charge(vmf->cow_page, vma->vm_mm, GFP_KERNEL)) {
 		put_page(vmf->cow_page);
