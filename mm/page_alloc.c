@@ -78,6 +78,9 @@
 #include "shuffle.h"
 #include "page_reporting.h"
 
+#ifdef CONFIG_SMM
+#include <linux/rmap.h>
+#endif
 /* Free Page Internal flags: for internal, non-pcp variants of free_pages(). */
 typedef int __bitwise fpi_t;
 
@@ -9002,7 +9005,12 @@ struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, 
 		spin_unlock_irqrestore(&zone->lock, flags);
 		clear_highpage(page);
 	} else {
-
+#if 0
+		if (is_smm_page_myself(page)) {
+			get_page(page);
+			return page;
+		}
+#endif
 		smm_lock();
 		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
 		if (ret == 0) {
@@ -9011,12 +9019,12 @@ struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, 
 			clear_highpage(page);
 		} else {
 			//TODO: check page owner???
-			printk("failed smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
 			if (is_smm_page_myself(page)) {
 				smm_unlock();
 				get_page(page);
 			} else {
 				smm_unlock();
+				printk("failed smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
 				page = alloc_zeroed_user_highpage_movable(vma, address);
 			}
 		}
@@ -9035,7 +9043,6 @@ void smm_do_read_fault(struct vm_fault *vmf)
 	struct zone *zone;
 	struct vm_area_struct *vma = vmf->vma;
 	unsigned long address = vmf->address;
-	pte_t * pte;
 
 	if (!vmf->vma->vm_mm->smm_activate)
 		return;
@@ -9054,6 +9061,9 @@ void smm_do_read_fault(struct vm_fault *vmf)
 		return;
 	}
 
+	if (unlikely(anon_vma_prepare(vmf->vma)))
+		return;
+
 	page = pfn_to_page(pfn);
 	zone = page_zone(page);
 	alloc_flags = gfp_to_alloc_flags(GFP_HIGHUSER_MOVABLE);
@@ -9069,12 +9079,17 @@ void smm_do_read_fault(struct vm_fault *vmf)
 
 		spin_unlock_irqrestore(&zone->lock, flags);
 		copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
+
+		page_add_new_anon_rmap(page, vmf->vma, vmf->address, false);
+		inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+
 		unlock_page(vmf->page);
 		put_page(vmf->page);
 		vmf->page = page;
 		lock_page(vmf->page);
 	} else {
 
+#if 1
 		if (is_smm_page_myself(page)) {
 			unlock_page(vmf->page);
 			put_page(vmf->page);
@@ -9083,7 +9098,7 @@ void smm_do_read_fault(struct vm_fault *vmf)
 			get_page(page);
 			return;
 		}
-
+#endif
 		smm_lock();
 		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
 		smm_unlock();
@@ -9091,13 +9106,32 @@ void smm_do_read_fault(struct vm_fault *vmf)
 		if (ret == 0) {
 			copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
 
+			page_add_new_anon_rmap(page, vmf->vma, vmf->address, false);
+			inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+
 			unlock_page(vmf->page);
 			put_page(vmf->page);
 			vmf->page = page;
 			lock_page(vmf->page);
+
 		} else {
 			//TODO: check page owner???
-			printk("failed smm_do_read_fault: [%s %d], address:%#lx\n",current->comm, current->pid, address);
+#if 0
+			if (is_smm_page_myself(page)) {
+				unlock_page(vmf->page);
+				put_page(vmf->page);
+				vmf->page = page;
+				lock_page(vmf->page);
+
+				get_page(page);
+				return;
+			} else {
+				printk("failed smm_do_read_fault: [%s %d], address:%#lx\n",current->comm, current->pid, address);
+				return;
+
+			}
+#else
+			pte_t *pte;
 			pte = pte_offset_map(vmf->pmd, vmf->address);
 			if (!pte_none(*pte) && pte_pfn(*pte) == pfn) {
 				unlock_page(vmf->page);
@@ -9108,6 +9142,7 @@ void smm_do_read_fault(struct vm_fault *vmf)
 				get_page(page);
 				return;
 			}
+#endif
 		}
 	}
 }

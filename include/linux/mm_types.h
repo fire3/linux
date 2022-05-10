@@ -440,6 +440,8 @@ struct mm_struct {
                 unsigned long smm_stack_page_count;  /* CMA reserved stack size */
                 unsigned long smm_code_page_count;   /* CMA reserved code size */
                 unsigned long smm_mem_page_count;    /* CMA reserved mmap/heap size */
+
+		unsigned long smm_uid;
 #endif
 		unsigned long mmap_base;	/* base of mmap area */
 		unsigned long mmap_legacy_base;	/* base of mmap area in bottom-up allocations */

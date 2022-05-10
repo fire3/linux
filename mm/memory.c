@@ -800,6 +800,25 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 	struct mm_struct *src_mm = src_vma->vm_mm;
 	struct page *new_page;
 
+#ifdef CONFIG_SMM
+	if (src_vma->vm_mm->smm_activate) {
+		new_page = *prealloc;
+		if (!new_page)
+			return -EAGAIN;
+		*prealloc = NULL;
+		copy_user_highpage(new_page, page, addr, src_vma);
+		__SetPageUptodate(new_page);
+		page_add_new_anon_rmap(new_page, dst_vma, addr, false);
+		lru_cache_add_inactive_or_unevictable(new_page, dst_vma);
+		rss[mm_counter(new_page)]++;
+
+		/* All done, just insert the new page copy in the child */
+		pte = mk_pte(new_page, dst_vma->vm_page_prot);
+		pte = maybe_mkwrite(pte_mkdirty(pte), dst_vma);
+		set_pte_at(dst_vma->vm_mm, addr, dst_pte, pte);
+		return 0;
+	}
+#endif
 	if (!is_cow_mapping(src_vma->vm_flags))
 		return 1;
 
@@ -3895,6 +3914,13 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct page *page)
 		page_add_new_anon_rmap(page, vma, vmf->address, false);
 		lru_cache_add_inactive_or_unevictable(page, vma);
 	} else {
+#ifdef CONFIG_SMM
+		if (PageAnon(page)) {
+			set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
+			update_mmu_cache(vma, vmf->address, vmf->pte);
+			return 0;
+		}
+#endif
 		inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
 		page_add_file_rmap(page, false);
 	}
@@ -4105,28 +4131,6 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 
 	if (unlikely(anon_vma_prepare(vma)))
 		return VM_FAULT_OOM;
-#if 0
-//#ifdef CONFIG_SMM
-	{
-		struct page *page;
-
-		if (!vmf->vma->vm_mm->smm_activate)
-			goto cont;
-		if (!(vmf->vma->vm_flags & VM_SMM_CODE) &&
-				!(vmf->vma->vm_flags & VM_SMM_MMAP))
-			goto cont;
-
-		page = take_smm_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
-		if (page)
-			vmf->cow_page = page;
-		else {
-			printk("do_cow_fault take_smm_page_vma failed\n");
-			vmf->cow_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
-			goto scont;
-		}
-	}
-cont:
-#endif
 #ifdef CONFIG_SMM
 	vmf->cow_page = smm_alloc_page_vma_highuser_movable(vma, vmf);
 #else

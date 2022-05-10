@@ -235,6 +235,8 @@ void mm_init_smm(struct mm_struct *mm)
 	mm->smm_code_size = 0;
 	mm->smm_stack_size = 0;
 	mm->smm_mem_size = 0;
+
+	mm->smm_uid = get_cycles();
 }
 
 unsigned long smm_code_va_to_pa(struct mm_struct *mm, unsigned long va)
@@ -373,10 +375,10 @@ void smm_unlock(void)
 
 void set_smm_page_myself(struct page *page)
 {
-	page->smm_owner = (void *)current->mm->pgd;
+	page->smm_owner = (void *)current->mm->smm_uid;
 }
 
 bool is_smm_page_myself(struct page *page)
 {
-	return ((void *)current->mm->pgd == page->smm_owner);
+	return ((void *)current->mm->smm_uid == page->smm_owner);
 }
