@@ -9061,8 +9061,8 @@ void smm_do_read_fault(struct vm_fault *vmf)
 		return;
 	}
 
-	if (unlikely(anon_vma_prepare(vmf->vma)))
-		return;
+	//if (unlikely(anon_vma_prepare(vmf->vma)))
+	//	return;
 
 	page = pfn_to_page(pfn);
 	zone = page_zone(page);
@@ -9080,8 +9080,8 @@ void smm_do_read_fault(struct vm_fault *vmf)
 		spin_unlock_irqrestore(&zone->lock, flags);
 		copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
 
-		page_add_new_anon_rmap(page, vmf->vma, vmf->address, false);
-		inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+		//page_add_new_anon_rmap(page, vmf->vma, vmf->address, false);
+		//inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
 
 		unlock_page(vmf->page);
 		put_page(vmf->page);
@@ -9106,8 +9106,8 @@ void smm_do_read_fault(struct vm_fault *vmf)
 		if (ret == 0) {
 			copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
 
-			page_add_new_anon_rmap(page, vmf->vma, vmf->address, false);
-			inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+			//page_add_new_anon_rmap(page, vmf->vma, vmf->address, false);
+			//inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
 
 			unlock_page(vmf->page);
 			put_page(vmf->page);

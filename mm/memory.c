@@ -3914,7 +3914,7 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct page *page)
 		page_add_new_anon_rmap(page, vma, vmf->address, false);
 		lru_cache_add_inactive_or_unevictable(page, vma);
 	} else {
-#ifdef CONFIG_SMM
+#if 0
 		if (PageAnon(page)) {
 			set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
 			update_mmu_cache(vma, vmf->address, vmf->pte);
