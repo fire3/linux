@@ -3179,6 +3179,13 @@ static void free_unref_page_commit(struct page *page, unsigned long pfn)
 	migratetype = get_pcppage_migratetype(page);
 	__count_vm_event(PGFREE);
 
+#ifdef CONFIG_SMM
+	if (is_migrate_cma_page(page)) {
+		free_one_page(zone, page, pfn, 0, MIGRATE_CMA, FPI_NONE);
+		return;
+	}
+#endif
+
 	/*
 	 * We only track unmovable, reclaimable and movable on pcp lists.
 	 * Free ISOLATE pages back to the allocator because they are being
