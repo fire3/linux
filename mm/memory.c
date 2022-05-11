@@ -3285,12 +3285,6 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 	vm_fault_t ret = 0;
 	void *shadow = NULL;
 
-#ifdef CONFIG_SMM
-	if (vmf && vmf->vma && vmf->vma->vm_mm && vmf->vma->vm_mm->smm_activate) {
-		printk("do_swap_page [%s %d] %#lx\n",current->comm,current->pid, vmf->address);
-	}
-#endif
-
 	if (!pte_unmap_same(vma->vm_mm, vmf->pmd, vmf->pte, vmf->orig_pte))
 		goto out;
 
@@ -3561,57 +3555,8 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	/* Allocate our own private page. */
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
-#if 0
-//#ifdef CONFIG_SMM
-	{
-		unsigned long pfn;
-
-		if (vma->vm_flags & VM_SMM_CODE)
-			goto cont;
-		pfn = smm_va_to_pa(vma, vmf->address) >> PAGE_SHIFT;
-		if (pfn == 0)
-			goto cont;
-
-		page = pfn_to_page(pfn);
-
-		entry = mk_pte(page, vma->vm_page_prot);
-		entry = pte_sw_mkyoung(entry);
-		if (vma->vm_flags & VM_WRITE)
-			entry = pte_mkwrite(pte_mkdirty(entry));
-
-		vmf->pte = pte_offset_map(vmf->pmd, vmf->address);
-		smm_lock();
-		ret = check_stable_address_space(vma->vm_mm);
-		if (ret) {
-			smm_unlock();
-			return ret;
-		}
-		if (!pte_none(*vmf->pte)) {
-			smm_unlock();
-			return ret;
-		}
-		page = take_smm_page_vma(GFP_HIGHUSER_MOVABLE | __GFP_ZERO, vma, vmf->address);
-
-		if (page) {
-			__SetPageUptodate(page);
-			inc_mm_counter_fast(vma->vm_mm, MM_ANONPAGES);
-			page_add_new_anon_rmap(page, vma, vmf->address, false);
-			lru_cache_add_inactive_or_unevictable(page, vma);
-			set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
-
-			/* No need to invalidate - it was non-present before */
-			update_mmu_cache(vma, vmf->address, vmf->pte);
-			smm_unlock();
-			return ret;
-		}
-
-		smm_unlock();
-	}
-cont:
-#endif
-
 #ifdef CONFIG_SMM
-	page = smm_alloc_zeroed_user_highpage_movable(vma, vmf->address);
+	page = smm_alloc_zeroed_user_highpage_movable(vmf);
 #else
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
 #endif
@@ -3914,13 +3859,6 @@ vm_fault_t alloc_set_pte(struct vm_fault *vmf, struct page *page)
 		page_add_new_anon_rmap(page, vma, vmf->address, false);
 		lru_cache_add_inactive_or_unevictable(page, vma);
 	} else {
-#if 0
-		if (PageAnon(page)) {
-			set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
-			update_mmu_cache(vma, vmf->address, vmf->pte);
-			return 0;
-		}
-#endif
 		inc_mm_counter_fast(vma->vm_mm, mm_counter_file(page));
 		page_add_file_rmap(page, false);
 	}
@@ -4488,6 +4426,7 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		else
 			return do_fault(vmf);
 	}
+
 
 	if (!pte_present(vmf->orig_pte))
 		return do_swap_page(vmf);
@@ -5352,3 +5291,6 @@ void ptlock_free(struct page *page)
 	kmem_cache_free(page_ptl_cachep, page->ptl);
 }
 #endif
+
+
+

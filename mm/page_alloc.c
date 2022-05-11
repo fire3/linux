@@ -80,6 +80,7 @@
 
 #ifdef CONFIG_SMM
 #include <linux/rmap.h>
+#include <asm/pgalloc.h>
 #endif
 /* Free Page Internal flags: for internal, non-pcp variants of free_pages(). */
 typedef int __bitwise fpi_t;
@@ -8941,15 +8942,6 @@ static bool take_smm_page_off_buddy(struct page *page)
 
 	spin_lock_irqsave(&zone->lock, flags);
 
-#if 0
-	if (!PageBuddy(page)
-			&& page_ref_count(page) == 0
-			&& page_mapcount(page) == 0
-			&& !page_mapping(page)) {
-		ret = true;
-		goto unlock;
-	}
-#endif
 	for (order = 0; order < MAX_ORDER; order++) {
 		struct page *page_head = page - (pfn & ((1 << order) - 1));
 		int page_order = buddy_order(page_head);
@@ -8972,15 +8964,18 @@ static bool take_smm_page_off_buddy(struct page *page)
 	return ret;
 }
 
-struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, unsigned long address)
+struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_fault *vmf)
 {
 	unsigned long flags;
 	unsigned int alloc_flags;
 	unsigned long pfn;
+	struct vm_area_struct *vma = vmf->vma;
+	unsigned long address = vmf->address;
 
 	int ret = false;
 	struct page *page = NULL;
 	struct zone *zone;
+	pte_t entry;
 
 
 	pfn = smm_va_to_pa(vma, address) >> PAGE_SHIFT;
@@ -8994,6 +8989,21 @@ struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, 
 	zone = page_zone(page);
 	alloc_flags = gfp_to_alloc_flags(GFP_HIGHUSER_MOVABLE);
 
+	entry = mk_pte(page, vma->vm_page_prot);
+	entry = pte_sw_mkyoung(entry);
+	if (vma->vm_flags & VM_WRITE)
+		entry = pte_mkwrite(pte_mkdirty(entry));
+
+
+	vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
+			&vmf->ptl);
+
+	if (!pte_none(*vmf->pte) && pte_pfn(*vmf->pte) == pfn) {
+		get_page(page); // For do_anonymous_page release
+		pte_unmap_unlock(vmf->pte, vmf->ptl);
+		return page;
+	}
+
 	ret = take_smm_page_off_buddy(page);
 
 	if (ret) {
@@ -9004,33 +9014,111 @@ struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_area_struct *vma, 
 		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
 		spin_unlock_irqrestore(&zone->lock, flags);
 		clear_highpage(page);
+
+		inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+		page_add_new_anon_rmap(page, vma, vmf->address, false);
+		lru_cache_add_inactive_or_unevictable(page, vma);
+		/* We set the pte earlier than do_anonymous_page to avoid contention */
+		set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
+		/* No need to invalidate - it was non-present before */
+		update_mmu_cache(vma, vmf->address, vmf->pte);
+
+		get_page(page); // For do_anonymous_page release
+		pte_unmap_unlock(vmf->pte, vmf->ptl);
+
 	} else {
-#if 0
-		if (is_smm_page_myself(page)) {
+		/* Double check pte under ptl */
+		if (!pte_none(*vmf->pte) && pte_pfn(*vmf->pte) == pfn) {
 			get_page(page);
+			pte_unmap_unlock(vmf->pte, vmf->ptl);
 			return page;
 		}
-#endif
+
+		pte_unmap_unlock(vmf->pte, vmf->ptl);
+
 		smm_lock();
+		/* Double check pte under smm lock*/
+		if (!pte_none(*vmf->pte) && pte_pfn(*vmf->pte) == pfn) {
+			get_page(page);
+			smm_unlock();
+			return page;
+		}
+
 		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
 		if (ret == 0) {
-			set_smm_page_myself(page);
+			inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+			page_add_new_anon_rmap(page, vma, vmf->address, false);
+			lru_cache_add_inactive_or_unevictable(page, vma);
+			/* We set the pte earlier than do_anonymous_page to avoid contention */
+			set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
+
+			get_page(page); // For do_anonymous_page release
 			smm_unlock();
 			clear_highpage(page);
 		} else {
-			//TODO: check page owner???
-			if (is_smm_page_myself(page)) {
-				smm_unlock();
-				get_page(page);
-			} else {
-				smm_unlock();
-				printk("failed smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
-				page = alloc_zeroed_user_highpage_movable(vma, address);
-			}
+			smm_unlock();
+			printk("failed smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
+			page = alloc_zeroed_user_highpage_movable(vma, address);
 		}
 	}
 	return page;
 }
+
+static int pmd_devmap_trans_unstable(pmd_t *pmd)
+{
+	return pmd_devmap(*pmd) || pmd_trans_unstable(pmd);
+}
+
+static vm_fault_t pte_alloc_one_map(struct vm_fault *vmf)
+{
+	struct vm_area_struct *vma = vmf->vma;
+
+	if (!pmd_none(*vmf->pmd))
+		goto map_pte;
+	if (vmf->prealloc_pte) {
+		vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
+		if (unlikely(!pmd_none(*vmf->pmd))) {
+			spin_unlock(vmf->ptl);
+			goto map_pte;
+		}
+
+		mm_inc_nr_ptes(vma->vm_mm);
+		pmd_populate(vma->vm_mm, vmf->pmd, vmf->prealloc_pte);
+		spin_unlock(vmf->ptl);
+		vmf->prealloc_pte = NULL;
+	} else if (unlikely(pte_alloc(vma->vm_mm, vmf->pmd))) {
+		return VM_FAULT_OOM;
+	}
+map_pte:
+	/*
+	 * If a huge pmd materialized under us just retry later.  Use
+	 * pmd_trans_unstable() via pmd_devmap_trans_unstable() instead of
+	 * pmd_trans_huge() to ensure the pmd didn't become pmd_trans_huge
+	 * under us and then back to pmd_none, as a result of MADV_DONTNEED
+	 * running immediately after a huge pmd fault in a different thread of
+	 * this mm, in turn leading to a misleading pmd_trans_huge() retval.
+	 * All we have to ensure is that it is a regular pmd that we can walk
+	 * with pte_offset_map() and we can do that through an atomic read in
+	 * C, which is what pmd_trans_unstable() provides.
+	 */
+	if (pmd_devmap_trans_unstable(vmf->pmd))
+		return VM_FAULT_NOPAGE;
+
+	/*
+	 * At this point we know that our vmf->pmd points to a page of ptes
+	 * and it cannot become pmd_none(), pmd_devmap() or pmd_trans_huge()
+	 * for the duration of the fault.  If a racing MADV_DONTNEED runs and
+	 * we zap the ptes pointed to by our vmf->pmd, the vmf->ptl will still
+	 * be valid and we will re-check to make sure the vmf->pte isn't
+	 * pte_none() under vmf->ptl protection when we return to
+	 * alloc_set_pte().
+	 */
+	vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
+			&vmf->ptl);
+	return 0;
+}
+
+
 
 void smm_do_read_fault(struct vm_fault *vmf)
 {
@@ -9043,6 +9131,8 @@ void smm_do_read_fault(struct vm_fault *vmf)
 	struct zone *zone;
 	struct vm_area_struct *vma = vmf->vma;
 	unsigned long address = vmf->address;
+	pte_t entry;
+	bool write = vmf->flags & FAULT_FLAG_WRITE;
 
 	if (!vmf->vma->vm_mm->smm_activate)
 		return;
@@ -9054,20 +9144,35 @@ void smm_do_read_fault(struct vm_fault *vmf)
 	if (!vmf->page)
 		return;
 
-
 	pfn = smm_va_to_pa(vma, address) >> PAGE_SHIFT;
 
 	if (pfn == 0) {
 		return;
 	}
 
-	//if (unlikely(anon_vma_prepare(vmf->vma)))
-	//	return;
-
 	page = pfn_to_page(pfn);
 	zone = page_zone(page);
 	alloc_flags = gfp_to_alloc_flags(GFP_HIGHUSER_MOVABLE);
 
+#if 0
+	entry = mk_pte(page, vma->vm_page_prot);
+	entry = pte_sw_mkyoung(entry);
+	if (write)
+		entry = maybe_mkwrite(pte_mkdirty(entry), vma);
+
+	if (!vmf->pte) {
+		ret = pte_alloc_one_map(vmf);
+		if (ret)
+			return;
+	}
+	/* For now we hold ptl */
+
+	if (!pte_none(*vmf->pte) && pte_pfn(*vmf->pte) == pfn) {
+		get_page(page); // For later VM_FAULT_NOPAGE
+		pte_unmap_unlock(vmf->pte, vmf->ptl);
+		return;
+	}
+#endif
 	ret = take_smm_page_off_buddy(page);
 
 	if (ret) {
@@ -9080,69 +9185,46 @@ void smm_do_read_fault(struct vm_fault *vmf)
 		spin_unlock_irqrestore(&zone->lock, flags);
 		copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
 
-		//page_add_new_anon_rmap(page, vmf->vma, vmf->address, false);
-		//inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
-
 		unlock_page(vmf->page);
 		put_page(vmf->page);
+		lock_page(page);
 		vmf->page = page;
-		lock_page(vmf->page);
+
 	} else {
 
-#if 1
 		if (is_smm_page_myself(page)) {
 			unlock_page(vmf->page);
 			put_page(vmf->page);
+			lock_page(page);
 			vmf->page = page;
-			lock_page(vmf->page);
 			get_page(page);
 			return;
 		}
-#endif
 		smm_lock();
 		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
 		smm_unlock();
-
 		if (ret == 0) {
+#if 0
+			/* copy-on-write page */
+			if (write && !(vma->vm_flags & VM_SHARED)) {
+				inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+				page_add_new_anon_rmap(page, vma, vmf->address, false);
+				lru_cache_add_inactive_or_unevictable(page, vma);
+			} else {
+				inc_mm_counter(vma->vm_mm, mm_counter_file(page));
+				page_add_file_rmap(page, false);
+			}
+			set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
+#endif
 			copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
-
-			//page_add_new_anon_rmap(page, vmf->vma, vmf->address, false);
-			//inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
-
+			set_smm_page_myself(page);
 			unlock_page(vmf->page);
 			put_page(vmf->page);
 			vmf->page = page;
 			lock_page(vmf->page);
-
 		} else {
-			//TODO: check page owner???
-#if 0
-			if (is_smm_page_myself(page)) {
-				unlock_page(vmf->page);
-				put_page(vmf->page);
-				vmf->page = page;
-				lock_page(vmf->page);
-
-				get_page(page);
-				return;
-			} else {
-				printk("failed smm_do_read_fault: [%s %d], address:%#lx\n",current->comm, current->pid, address);
-				return;
-
-			}
-#else
-			pte_t *pte;
-			pte = pte_offset_map(vmf->pmd, vmf->address);
-			if (!pte_none(*pte) && pte_pfn(*pte) == pfn) {
-				unlock_page(vmf->page);
-				put_page(vmf->page);
-				vmf->page = page;
-				lock_page(vmf->page);
-
-				get_page(page);
-				return;
-			}
-#endif
+			printk("failed smm_do_read_fault [%s %d] addr:%#lx.\n",
+					current->comm, current->pid, vmf->address);
 		}
 	}
 }

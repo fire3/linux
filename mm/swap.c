@@ -490,6 +490,10 @@ void lru_cache_add_inactive_or_unevictable(struct page *page,
 
 	VM_BUG_ON_PAGE(PageLRU(page), page);
 
+#ifdef CONFIG_SMM
+	if (is_migrate_cma_page(page))
+		return;
+#endif
 	unevictable = (vma->vm_flags & (VM_LOCKED | VM_SPECIAL)) == VM_LOCKED;
 	if (unlikely(unevictable) && !TestSetPageMlocked(page)) {
 		int nr_pages = thp_nr_pages(page);
