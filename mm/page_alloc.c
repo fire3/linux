@@ -3792,6 +3792,10 @@ static inline unsigned int current_alloc_flags(gfp_t gfp_mask,
 		alloc_flags |= ALLOC_CMA;
 
 #endif
+#ifdef CONFIG_SMM
+	if ((gfp_mask & __GFP_PAGE_CACHE))
+		alloc_flags &= ~ALLOC_CMA;
+#endif
 	return alloc_flags;
 }
 

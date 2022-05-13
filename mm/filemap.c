@@ -964,6 +964,9 @@ struct page *__page_cache_alloc(gfp_t gfp)
 	int n;
 	struct page *page;
 
+#ifdef CONFIG_SMM
+	gfp = gfp | __GFP_PAGE_CACHE;
+#endif
 	if (cpuset_do_page_mem_spread()) {
 		unsigned int cpuset_mems_cookie;
 		do {

@@ -186,6 +186,22 @@ void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
 	}
 }
 
+void smm_check_unfree_pages(void)
+{
+	unsigned long i;
+	unsigned long pfn = smm_cma->base_pfn;
+	struct page *page;
+
+	for (i = 0; i < smm_cma->count; i++) {
+		page = pfn_to_page(pfn);
+		if (page_ref_count(page) != 0) {
+			dump_page(page, "Unfree CMA page");
+		}
+		pfn++;
+	}
+}
+
+
 void exit_smm(struct mm_struct *mm)
 {
 	if (mm->smm_stack_base_pfn && mm->smm_stack_page_count) {
@@ -208,6 +224,8 @@ void exit_smm(struct mm_struct *mm)
 		smm_dbg("[%s %d] SMM cancel code cma pfn [%#lx - %#lx).\n",
 			current->comm, current->pid, mm->smm_code_base_pfn,
 			mm->smm_code_base_pfn + mm->smm_code_page_count);
+
+		//smm_check_unfree_pages();
 	}
 }
 
