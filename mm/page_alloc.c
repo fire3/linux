@@ -8943,7 +8943,7 @@ static void smm_break_down_buddy_pages(struct zone *zone, struct page *page,
 	}
 }
 
-static bool take_smm_page_off_buddy(struct page *page, int target_order)
+bool take_smm_page_off_buddy(struct page *page, int target_order)
 {
 	struct zone *zone = page_zone(page);
 	unsigned long pfn = page_to_pfn(page);
@@ -8956,7 +8956,6 @@ static bool take_smm_page_off_buddy(struct page *page, int target_order)
 	for (order = target_order; order < MAX_ORDER; order++) {
 		struct page *page_head = page - (pfn & ((1 << order) - 1));
 		int page_order = buddy_order(page_head);
-
 
 		if (PageBuddy(page_head) && page_order >= order) {
 			unsigned long pfn_head = page_to_pfn(page_head);
@@ -8975,6 +8974,44 @@ static bool take_smm_page_off_buddy(struct page *page, int target_order)
 	spin_unlock_irqrestore(&zone->lock, flags);
 	return ret;
 }
+
+struct page *smm_alloc_huge_pmd_page(struct vm_fault *vmf, gfp_t gfp)
+{
+	unsigned long flags;
+	unsigned int alloc_flags;
+	unsigned long pfn;
+	struct vm_area_struct *vma = vmf->vma;
+	unsigned long address = vmf->address & HPAGE_PMD_MASK;
+
+	int ret = false;
+	struct page *page = NULL;
+	struct zone *zone;
+
+	pfn = smm_va_to_pa(vma, address) >> PAGE_SHIFT;
+
+	if (pfn == 0) {
+		page = alloc_hugepage_vma(gfp, vma, address, HPAGE_PMD_ORDER);
+		return page;
+	}
+	page = pfn_to_page(pfn);
+	zone = page_zone(page);
+	alloc_flags = gfp_to_alloc_flags(gfp);
+
+	ret = take_smm_page_off_buddy(page, HPAGE_PMD_ORDER);
+
+	if (ret) {
+		spin_lock_irqsave(&zone->lock, flags);
+		set_smm_page_myself(page);
+		prep_new_page(page, HPAGE_PMD_ORDER, gfp, alloc_flags);
+		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -(1<<HPAGE_PMD_ORDER));
+		__mod_zone_page_state(zone, NR_FREE_PAGES, -(1<<HPAGE_PMD_ORDER));
+		spin_unlock_irqrestore(&zone->lock, flags);
+		return page;
+	} else {
+		return alloc_hugepage_vma(gfp, vma, address, HPAGE_PMD_ORDER);
+	}
+}
+
 
 struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_fault *vmf)
 {
