@@ -8943,7 +8943,7 @@ static void smm_break_down_buddy_pages(struct zone *zone, struct page *page,
 	}
 }
 
-static bool take_smm_page_off_buddy(struct page *page)
+static bool take_smm_page_off_buddy(struct page *page, int target_order)
 {
 	struct zone *zone = page_zone(page);
 	unsigned long pfn = page_to_pfn(page);
@@ -8953,9 +8953,10 @@ static bool take_smm_page_off_buddy(struct page *page)
 
 	spin_lock_irqsave(&zone->lock, flags);
 
-	for (order = 0; order < MAX_ORDER; order++) {
+	for (order = target_order; order < MAX_ORDER; order++) {
 		struct page *page_head = page - (pfn & ((1 << order) - 1));
 		int page_order = buddy_order(page_head);
+
 
 		if (PageBuddy(page_head) && page_order >= order) {
 			unsigned long pfn_head = page_to_pfn(page_head);
@@ -8963,7 +8964,7 @@ static bool take_smm_page_off_buddy(struct page *page)
 								   pfn_head);
 
 			del_page_from_free_list(page_head, zone, page_order);
-			smm_break_down_buddy_pages(zone, page_head, page, 0,
+			smm_break_down_buddy_pages(zone, page_head, page, target_order,
 						page_order, migratetype);
 			ret = true;
 			break;
@@ -9015,7 +9016,7 @@ struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_fault *vmf)
 		return page;
 	}
 
-	ret = take_smm_page_off_buddy(page);
+	ret = take_smm_page_off_buddy(page, 0);
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
@@ -9108,7 +9109,7 @@ void smm_do_read_fault(struct vm_fault *vmf)
 	zone = page_zone(page);
 	alloc_flags = gfp_to_alloc_flags(GFP_HIGHUSER_MOVABLE);
 
-	ret = take_smm_page_off_buddy(page);
+	ret = take_smm_page_off_buddy(page, 0);
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
@@ -9176,7 +9177,7 @@ struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, str
 	zone = page_zone(page);
 	alloc_flags = gfp_to_alloc_flags(GFP_HIGHUSER_MOVABLE);
 
-	ret = take_smm_page_off_buddy(page);
+	ret = take_smm_page_off_buddy(page, 0);
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
@@ -9199,7 +9200,7 @@ struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, str
 			if (!pte_none(*pte) && pte_pfn(*pte) == pfn) {
 				get_page(page);
 			} else {
-				page = NULL;
+				page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
 			}
 		}
 	}
