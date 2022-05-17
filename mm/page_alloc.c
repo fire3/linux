@@ -8943,13 +8943,14 @@ static void smm_break_down_buddy_pages(struct zone *zone, struct page *page,
 	}
 }
 
-bool take_smm_page_off_buddy(struct page *page, int target_order)
+bool take_smm_page_off_buddy(struct page *page, int target_order, gfp_t gfp)
 {
 	struct zone *zone = page_zone(page);
 	unsigned long pfn = page_to_pfn(page);
 	unsigned long flags;
 	unsigned int order;
 	bool ret = false;
+	unsigned int alloc_flags = gfp_to_alloc_flags(gfp);
 
 	spin_lock_irqsave(&zone->lock, flags);
 
@@ -8971,6 +8972,8 @@ bool take_smm_page_off_buddy(struct page *page, int target_order)
 		if (page_count(page_head) > 0)
 			break;
 	}
+	if (ret)
+		prep_new_page(page, target_order, gfp, alloc_flags);
 	spin_unlock_irqrestore(&zone->lock, flags);
 	return ret;
 }
@@ -8997,12 +9000,12 @@ struct page *smm_alloc_huge_pmd_page(struct vm_fault *vmf, gfp_t gfp)
 	zone = page_zone(page);
 	alloc_flags = gfp_to_alloc_flags(gfp);
 
-	ret = take_smm_page_off_buddy(page, HPAGE_PMD_ORDER);
+	ret = take_smm_page_off_buddy(page, HPAGE_PMD_ORDER, gfp);
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
 		set_smm_page_myself(page);
-		prep_new_page(page, HPAGE_PMD_ORDER, gfp, alloc_flags);
+		//prep_new_page(page, HPAGE_PMD_ORDER, gfp, alloc_flags);
 		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -(1<<HPAGE_PMD_ORDER));
 		__mod_zone_page_state(zone, NR_FREE_PAGES, -(1<<HPAGE_PMD_ORDER));
 		spin_unlock_irqrestore(&zone->lock, flags);
@@ -9053,12 +9056,12 @@ struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_fault *vmf)
 		return page;
 	}
 
-	ret = take_smm_page_off_buddy(page, 0);
+	ret = take_smm_page_off_buddy(page, 0, GFP_HIGHUSER_MOVABLE);
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
 		set_smm_page_myself(page);
-		prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
+		//prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
 		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
 		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
 		spin_unlock_irqrestore(&zone->lock, flags);
@@ -9146,12 +9149,12 @@ void smm_do_read_fault(struct vm_fault *vmf)
 	zone = page_zone(page);
 	alloc_flags = gfp_to_alloc_flags(GFP_HIGHUSER_MOVABLE);
 
-	ret = take_smm_page_off_buddy(page, 0);
+	ret = take_smm_page_off_buddy(page, 0, GFP_HIGHUSER_MOVABLE);
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
 		set_smm_page_myself(page);
-		prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
+		//prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
 		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
 		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
 
@@ -9214,12 +9217,12 @@ struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, str
 	zone = page_zone(page);
 	alloc_flags = gfp_to_alloc_flags(GFP_HIGHUSER_MOVABLE);
 
-	ret = take_smm_page_off_buddy(page, 0);
+	ret = take_smm_page_off_buddy(page, 0, GFP_HIGHUSER_MOVABLE);
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
 		set_smm_page_myself(page);
-		prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
+		//prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
 		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
 		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
 		spin_unlock_irqrestore(&zone->lock, flags);
