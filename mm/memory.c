@@ -3618,7 +3618,6 @@ oom:
 extern bool take_smm_page_off_buddy(struct page *page, int target_order, gfp_t gfp);
 static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
 {
-	unsigned long flags;
 	unsigned long pfn;
 	struct vm_area_struct *vma = vmf->vma;
 	unsigned long address = vmf->address;
@@ -3684,10 +3683,6 @@ static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
 			return VM_FAULT_OOM;
 		}
 
-		spin_lock_irqsave(&zone->lock, flags);
-		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
-		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
-		spin_unlock_irqrestore(&zone->lock, flags);
 		clear_highpage(page);
 
 		inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
@@ -3720,7 +3715,6 @@ static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
 		/* We set the pte earlier than do_anonymous_page to avoid contention */
 		set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
 		smm_unlock();
-		printk("success smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
 		clear_highpage(page);
 		return 0;
 	} else {

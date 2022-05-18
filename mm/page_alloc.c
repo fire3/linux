@@ -8972,8 +8972,10 @@ bool take_smm_page_off_buddy(struct page *page, int target_order, gfp_t gfp)
 		if (page_count(page_head) > 0)
 			break;
 	}
-	if (ret)
+	if (ret) {
+		__mod_zone_freepage_state(zone, -(1 << target_order), MIGRATE_CMA);
 		prep_new_page(page, target_order, gfp, alloc_flags);
+	}
 	spin_unlock_irqrestore(&zone->lock, flags);
 	return ret;
 }
@@ -9003,119 +9005,11 @@ struct page *smm_alloc_huge_pmd_page(struct vm_fault *vmf, gfp_t gfp)
 	ret = take_smm_page_off_buddy(page, HPAGE_PMD_ORDER, gfp);
 
 	if (ret) {
-		spin_lock_irqsave(&zone->lock, flags);
-		set_smm_page_myself(page);
-		//prep_new_page(page, HPAGE_PMD_ORDER, gfp, alloc_flags);
-		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -(1<<HPAGE_PMD_ORDER));
-		__mod_zone_page_state(zone, NR_FREE_PAGES, -(1<<HPAGE_PMD_ORDER));
-		spin_unlock_irqrestore(&zone->lock, flags);
 		return page;
 	} else {
 		return alloc_hugepage_vma(gfp, vma, address, HPAGE_PMD_ORDER);
 	}
 }
-
-
-struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_fault *vmf)
-{
-	unsigned long flags;
-	unsigned int alloc_flags;
-	unsigned long pfn;
-	struct vm_area_struct *vma = vmf->vma;
-	unsigned long address = vmf->address;
-
-	int ret = false;
-	struct page *page = NULL;
-	struct zone *zone;
-	pte_t entry;
-
-
-	pfn = smm_va_to_pa(vma, address) >> PAGE_SHIFT;
-
-	if (pfn == 0) {
-		page = alloc_zeroed_user_highpage_movable(vma, address);
-		return page;
-	}
-
-	page = pfn_to_page(pfn);
-	zone = page_zone(page);
-	alloc_flags = gfp_to_alloc_flags(GFP_HIGHUSER_MOVABLE);
-
-	entry = mk_pte(page, vma->vm_page_prot);
-	entry = pte_sw_mkyoung(entry);
-	if (vma->vm_flags & VM_WRITE)
-		entry = pte_mkwrite(pte_mkdirty(entry));
-
-
-	vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
-			&vmf->ptl);
-
-	if (!pte_none(*vmf->pte) && pte_pfn(*vmf->pte) == pfn) {
-		get_page(page); // For do_anonymous_page release
-		pte_unmap_unlock(vmf->pte, vmf->ptl);
-		return page;
-	}
-
-	ret = take_smm_page_off_buddy(page, 0, GFP_HIGHUSER_MOVABLE);
-
-	if (ret) {
-		spin_lock_irqsave(&zone->lock, flags);
-		set_smm_page_myself(page);
-		//prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
-		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
-		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
-		spin_unlock_irqrestore(&zone->lock, flags);
-		clear_highpage(page);
-
-		inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
-		page_add_new_anon_rmap(page, vma, vmf->address, false);
-		lru_cache_add_inactive_or_unevictable(page, vma);
-		/* We set the pte earlier than do_anonymous_page to avoid contention */
-		set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
-		/* No need to invalidate - it was non-present before */
-		update_mmu_cache(vma, vmf->address, vmf->pte);
-
-		get_page(page); // For do_anonymous_page release
-		pte_unmap_unlock(vmf->pte, vmf->ptl);
-
-	} else {
-		/* Double check pte under ptl */
-		if (!pte_none(*vmf->pte) && pte_pfn(*vmf->pte) == pfn) {
-			get_page(page);
-			pte_unmap_unlock(vmf->pte, vmf->ptl);
-			return page;
-		}
-
-		pte_unmap_unlock(vmf->pte, vmf->ptl);
-
-		smm_lock();
-		/* Double check pte under smm lock*/
-		if (!pte_none(*vmf->pte) && pte_pfn(*vmf->pte) == pfn) {
-			get_page(page);
-			smm_unlock();
-			return page;
-		}
-
-		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
-		if (ret == 0) {
-			inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
-			page_add_new_anon_rmap(page, vma, vmf->address, false);
-			lru_cache_add_inactive_or_unevictable(page, vma);
-			/* We set the pte earlier than do_anonymous_page to avoid contention */
-			set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
-
-			get_page(page); // For do_anonymous_page release
-			smm_unlock();
-			clear_highpage(page);
-		} else {
-			smm_unlock();
-			printk("failed smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
-			page = alloc_zeroed_user_highpage_movable(vma, address);
-		}
-	}
-	return page;
-}
-
 
 void smm_do_read_fault(struct vm_fault *vmf)
 {
@@ -9154,11 +9048,8 @@ void smm_do_read_fault(struct vm_fault *vmf)
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
 		set_smm_page_myself(page);
-		//prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
-		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
-		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
-
 		spin_unlock_irqrestore(&zone->lock, flags);
+
 		copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
 
 		unlock_page(vmf->page);
@@ -9222,9 +9113,6 @@ struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, str
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
 		set_smm_page_myself(page);
-		//prep_new_page(page, 0, GFP_HIGHUSER_MOVABLE, alloc_flags);
-		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
-		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
 		spin_unlock_irqrestore(&zone->lock, flags);
 	} else {
 
