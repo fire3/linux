@@ -3555,11 +3555,9 @@ static vm_fault_t do_anonymous_page(struct vm_fault *vmf)
 	/* Allocate our own private page. */
 	if (unlikely(anon_vma_prepare(vma)))
 		goto oom;
-#ifdef CONFIG_SMM
-	page = smm_alloc_zeroed_user_highpage_movable(vmf);
-#else
+
 	page = alloc_zeroed_user_highpage_movable(vma, vmf->address);
-#endif
+
 	if (!page)
 		goto oom;
 
@@ -3615,6 +3613,126 @@ oom_free_page:
 oom:
 	return VM_FAULT_OOM;
 }
+
+#ifdef CONFIG_SMM
+extern bool take_smm_page_off_buddy(struct page *page, int target_order, gfp_t gfp);
+static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
+{
+	unsigned long flags;
+	unsigned long pfn;
+	struct vm_area_struct *vma = vmf->vma;
+	unsigned long address = vmf->address;
+	struct page *page;
+	vm_fault_t ret = 0;
+	pte_t entry;
+	struct zone *zone;
+
+
+	pfn = smm_va_to_pa(vmf->vma, vmf->address) >> PAGE_SHIFT;
+	if (pfn == 0)
+		return do_anonymous_page(vmf);
+
+	/* File mapping without ->vm_ops ? */
+	if (vma->vm_flags & VM_SHARED)
+		return VM_FAULT_SIGBUS;
+
+	if (pte_alloc(vma->vm_mm, vmf->pmd))
+		return VM_FAULT_OOM;
+
+	/* See the comment in pte_alloc_one_map() */
+	if (unlikely(pmd_trans_unstable(vmf->pmd)))
+		return 0;
+
+	if (unlikely(anon_vma_prepare(vma)))
+		return do_anonymous_page(vmf);
+
+	page = pfn_to_page(pfn);
+
+
+	zone = page_zone(page);
+
+	entry = mk_pte(page, vma->vm_page_prot);
+	entry = pte_sw_mkyoung(entry);
+	if (vma->vm_flags & VM_WRITE)
+		entry = pte_mkwrite(pte_mkdirty(entry));
+
+
+	vmf->pte = pte_offset_map_lock(vma->vm_mm, vmf->pmd, vmf->address,
+			&vmf->ptl);
+
+	/* check pte under ptl */
+	if (!pte_none(*vmf->pte) && pte_pfn(*vmf->pte) == pfn) {
+		pte_unmap_unlock(vmf->pte, vmf->ptl);
+		return 0;
+	}
+
+	cgroup_throttle_swaprate(page, GFP_KERNEL);
+
+	if (take_smm_page_off_buddy(page, 0, GFP_HIGHUSER_MOVABLE)) {
+
+		ret = check_stable_address_space(vma->vm_mm);
+		if (ret) {
+			put_page(page);
+			pte_unmap_unlock(vmf->pte, vmf->ptl);
+			return ret;
+
+		}
+
+		if (mem_cgroup_charge(page, vma->vm_mm, GFP_KERNEL)) {
+			put_page(page);
+			pte_unmap_unlock(vmf->pte, vmf->ptl);
+			return VM_FAULT_OOM;
+		}
+
+		spin_lock_irqsave(&zone->lock, flags);
+		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, -1);
+		__mod_zone_page_state(zone, NR_FREE_PAGES, -1);
+		spin_unlock_irqrestore(&zone->lock, flags);
+		clear_highpage(page);
+
+		inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+		__SetPageUptodate(page);
+		page_add_new_anon_rmap(page, vma, vmf->address, false);
+		lru_cache_add_inactive_or_unevictable(page, vma);
+		/* We set the pte earlier than do_anonymous_page to avoid contention */
+		set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
+		/* No need to invalidate - it was non-present before */
+		update_mmu_cache(vma, vmf->address, vmf->pte);
+
+		pte_unmap_unlock(vmf->pte, vmf->ptl);
+		return 0;
+	}
+
+	pte_unmap_unlock(vmf->pte, vmf->ptl);
+
+	smm_lock();
+	/* Double check pte under smm lock*/
+	if (!pte_none(*vmf->pte) && pte_pfn(*vmf->pte) == pfn) {
+		smm_unlock();
+		return 0;
+	}
+
+	ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
+	if (ret == 0) {
+		inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
+		page_add_new_anon_rmap(page, vma, vmf->address, false);
+		lru_cache_add_inactive_or_unevictable(page, vma);
+		/* We set the pte earlier than do_anonymous_page to avoid contention */
+		set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
+		smm_unlock();
+		printk("success smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
+		clear_highpage(page);
+		return 0;
+	} else {
+		smm_unlock();
+		printk("failed smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
+		return do_anonymous_page(vmf);
+	}
+}
+
+#endif
+
+
 
 /*
  * The mmap_lock must have been held on entry, and may have been
@@ -4422,7 +4540,11 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 
 	if (!vmf->pte) {
 		if (vma_is_anonymous(vmf->vma))
+#ifdef CONFIG_SMM
+			return smm_do_anonymous_page(vmf);
+#else
 			return do_anonymous_page(vmf);
+#endif
 		else
 			return do_fault(vmf);
 	}
