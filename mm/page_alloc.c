@@ -2870,7 +2870,6 @@ retry:
 	if (unlikely(!page)) {
 		if (alloc_flags & ALLOC_CMA)
 			page = __rmqueue_cma_fallback(zone, order);
-
 		if (!page && __rmqueue_fallback(zone, order, migratetype,
 								alloc_flags))
 			goto retry;
@@ -3219,8 +3218,9 @@ void free_unref_page(struct page *page)
 	unsigned long flags;
 	unsigned long pfn = page_to_pfn(page);
 
-	if (!free_unref_page_prepare(page, pfn))
+	if (!free_unref_page_prepare(page, pfn)) {
 		return;
+	}
 
 	local_irq_save(flags);
 	free_unref_page_commit(page, pfn);
@@ -3239,8 +3239,9 @@ void free_unref_page_list(struct list_head *list)
 	/* Prepare pages for freeing */
 	list_for_each_entry_safe(page, next, list, lru) {
 		pfn = page_to_pfn(page);
-		if (!free_unref_page_prepare(page, pfn))
+		if (!free_unref_page_prepare(page, pfn)) {
 			list_del(&page->lru);
+		}
 		set_page_private(page, pfn);
 	}
 
@@ -8978,37 +8979,6 @@ bool take_smm_page_off_buddy(struct page *page, int target_order, gfp_t gfp)
 	}
 	spin_unlock_irqrestore(&zone->lock, flags);
 	return ret;
-}
-
-struct page *smm_alloc_huge_pmd_page(struct vm_fault *vmf, gfp_t gfp)
-{
-	unsigned long flags;
-	unsigned int alloc_flags;
-	unsigned long pfn;
-	struct vm_area_struct *vma = vmf->vma;
-	unsigned long address = vmf->address & HPAGE_PMD_MASK;
-
-	int ret = false;
-	struct page *page = NULL;
-	struct zone *zone;
-
-	pfn = smm_va_to_pa(vma, address) >> PAGE_SHIFT;
-
-	if (pfn == 0) {
-		page = alloc_hugepage_vma(gfp, vma, address, HPAGE_PMD_ORDER);
-		return page;
-	}
-	page = pfn_to_page(pfn);
-	zone = page_zone(page);
-	alloc_flags = gfp_to_alloc_flags(gfp);
-
-	ret = take_smm_page_off_buddy(page, HPAGE_PMD_ORDER, gfp);
-
-	if (ret) {
-		return page;
-	} else {
-		return alloc_hugepage_vma(gfp, vma, address, HPAGE_PMD_ORDER);
-	}
 }
 
 void smm_do_read_fault(struct vm_fault *vmf)
