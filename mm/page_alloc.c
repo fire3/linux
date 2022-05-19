@@ -962,6 +962,115 @@ buddy_merge_likely(unsigned long pfn, unsigned long buddy_pfn,
 	       page_is_buddy(higher_page, higher_buddy, order + 1);
 }
 
+
+#ifdef CONFIG_SMM
+bool add_sorted(struct page *page, struct zone *zone, int migratetype,
+		int order)
+{
+	struct page *prev, *next;
+	unsigned long prev_pfn, next_pfn;
+	bool added;
+	unsigned int counter;
+
+	counter = 0;
+	added = 0;
+	prev_pfn = page_to_pfn(page) - (1 << order);
+	next_pfn = page_to_pfn(page) + (1 << order);
+
+	while (pfn_valid(prev_pfn) && pfn_valid(next_pfn)) {
+		if (page_zone(pfn_to_page(prev_pfn)) != zone ||
+		    page_zone(pfn_to_page(next_pfn)) != zone) {
+			break;
+		}
+
+		if ((prev_pfn == page_to_pfn(page)) ||
+		    (next_pfn == page_to_pfn(page))) {
+			return 0;
+		}
+
+		if (pfn_valid(prev_pfn)) {
+			prev = pfn_to_page(prev_pfn);
+			if (PageBuddy(prev) && buddy_order(prev) == order &&
+			    page_zone(prev) == zone &&
+			    get_pageblock_migratetype(prev) == migratetype) {
+				if ((void *)&page->lru == (void *)&prev->lru.next ||
+				    (void *)&page->lru == (void *)&prev->lru.prev)
+					return 1;
+
+				list_add_tail(&page->lru, &prev->lru);
+				added = 1;
+				break;
+			}
+			prev_pfn = prev_pfn - (1 << order);
+		}
+		if (pfn_valid(next_pfn)) {
+			next = pfn_to_page(next_pfn);
+			if (PageBuddy(next) && buddy_order(next) == order &&
+			    page_zone(next) == zone &&
+			    get_pageblock_migratetype(next) == migratetype) {
+				if ((void *)&page->lru == (void *)&next->lru.next ||
+				    (void *)&page->lru == (void *)&next->lru.prev)
+					return 1;
+				list_add(&page->lru, &next->lru);
+				added = 1;
+				break;
+			}
+			next_pfn = next_pfn + (1 << order);
+		}
+		counter = counter + 1;
+	}
+
+	if (added)
+		return added;
+
+	if (!pfn_valid(prev_pfn)) {
+		if ((void *)&page->lru ==
+			    (void *)&zone->free_area[order].free_list[migratetype].next ||
+		    (void *)&page->lru ==
+			    (void *)&zone->free_area[order].free_list[migratetype].prev)
+			return 1;
+		list_add_tail(&page->lru,
+			 &zone->free_area[order].free_list[migratetype]);
+		return 1;
+	}
+
+	if (page_zone(pfn_to_page(prev_pfn)) != zone) {
+		if ((void *)&page->lru ==
+			    (void *)&zone->free_area[order].free_list[migratetype].next ||
+		    (void *)&page->lru ==
+			    (void *)&zone->free_area[order].free_list[migratetype].prev)
+			return 1;
+		list_add_tail(&page->lru,
+			 &zone->free_area[order].free_list[migratetype]);
+		added = 1;
+	}
+
+	if (!pfn_valid(next_pfn)) {
+		if ((void *)&page->lru ==
+			    (void *)&zone->free_area[order].free_list[migratetype].next ||
+		    (void *)&page->lru ==
+			    (void *)&zone->free_area[order].free_list[migratetype].prev)
+			return 1;
+		list_add(&page->lru,
+			      &zone->free_area[order].free_list[migratetype]);
+		return 1;
+	}
+
+	if (page_zone(pfn_to_page(next_pfn)) != zone) {
+		if ((void *)&page->lru ==
+			    (void *)&zone->free_area[order].free_list[migratetype].next ||
+		    (void *)&page->lru ==
+			    (void *)&zone->free_area[order].free_list[migratetype].prev)
+			return 1;
+		list_add(&page->lru,
+			      &zone->free_area[order].free_list[migratetype]);
+		added = 1;
+	}
+
+	return added;
+}
+#endif
+
 /*
  * Freeing function for a buddy system allocator.
  *
@@ -8937,7 +9046,7 @@ static void smm_break_down_buddy_pages(struct zone *zone, struct page *page,
 			continue;
 
 		if (current_buddy != target) {
-			add_to_free_list(current_buddy, zone, high, migratetype);
+			add_to_free_list_tail(current_buddy, zone, high, migratetype);
 			set_buddy_order(current_buddy, high);
 			page = next_page;
 		}
@@ -8967,17 +9076,19 @@ bool take_smm_page_off_buddy(struct page *page, int target_order, gfp_t gfp)
 			del_page_from_free_list(page_head, zone, page_order);
 			smm_break_down_buddy_pages(zone, page_head, page, target_order,
 						page_order, migratetype);
+			set_pcppage_migratetype(page, migratetype);
+			__mod_zone_freepage_state(zone, -(1 << target_order), migratetype);
 			ret = true;
 			break;
 		}
 		if (page_count(page_head) > 0)
 			break;
 	}
+	spin_unlock_irqrestore(&zone->lock, flags);
+
 	if (ret) {
-		__mod_zone_freepage_state(zone, -(1 << target_order), MIGRATE_CMA);
 		prep_new_page(page, target_order, gfp, alloc_flags);
 	}
-	spin_unlock_irqrestore(&zone->lock, flags);
 	return ret;
 }
 

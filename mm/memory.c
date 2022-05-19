@@ -3620,7 +3620,6 @@ static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
 {
 	unsigned long pfn;
 	struct vm_area_struct *vma = vmf->vma;
-	unsigned long address = vmf->address;
 	struct page *page;
 	vm_fault_t ret = 0;
 	pte_t entry;
@@ -3719,7 +3718,8 @@ static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
 		return 0;
 	} else {
 		smm_unlock();
-		printk("failed smm_alloc_zeroed_user_highpage_movable: [%s %d], address:%#lx\n",current->comm, current->pid, address);
+		pr_info_ratelimited("[%s %d] smm_do_anonymous_page fallback:%#lx\n",
+				current->comm, current->pid, vmf->address);
 		return do_anonymous_page(vmf);
 	}
 }
