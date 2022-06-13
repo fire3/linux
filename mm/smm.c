@@ -116,6 +116,41 @@ bool smm_cma_cancel(unsigned long pfn, unsigned int count)
 	return cma_cancel(smm_cma, pfn, count);
 }
 
+void smm_shuffle_freelist(unsigned long pfn_start, unsigned long pfn_end)
+{
+	struct zone *zone;
+	int current_order;
+	struct free_area *area;
+	struct page *page, *next;
+	unsigned long pfn;
+	unsigned long flags;
+	struct list_head *freelist;
+	LIST_HEAD(pages_to_move);
+
+	zone = page_zone(pfn_to_page(pfn_start));
+
+	spin_lock_irqsave(&zone->lock, flags);
+	for (current_order = (MAX_ORDER-1); current_order >= 0; --current_order) {
+		area = &(zone->free_area[current_order]);
+		freelist = &area->free_list[MIGRATE_CMA];
+		list_for_each_entry_safe(page, next, freelist, lru) {
+			pfn = page_to_pfn(page);
+			if (pfn >= pfn_start && pfn < pfn_end) {
+				list_del(&page->lru);
+				list_add(&page->lru, &pages_to_move);
+			}
+		}
+	}
+
+	list_for_each_entry_safe(page, next, &pages_to_move, lru) {
+		area = &(zone->free_area[buddy_order(page)]);
+		freelist = &area->free_list[MIGRATE_CMA];
+		list_add_tail(&page->lru, freelist);
+	}
+
+	spin_unlock_irqrestore(&zone->lock, flags);
+}
+
 void smm_cma_reserve_code(unsigned long size, struct mm_struct *mm)
 {
 	unsigned long pfn;
@@ -132,10 +167,12 @@ void smm_cma_reserve_code(unsigned long size, struct mm_struct *mm)
 	if (pfn != 0) {
 		mm->smm_code_base_pfn = pfn;
 		mm->smm_code_page_count = size / PAGE_SIZE;
+
 	} else {
 		mm->smm_code_base_pfn = 0;
 		mm->smm_code_page_count = 0;
 	}
+
 }
 
 void smm_cma_reserve_stack(unsigned long size, struct mm_struct *mm)
@@ -175,9 +212,13 @@ void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
 	if (pfn != 0) {
 		mm->smm_mem_base_pfn = pfn;
 		mm->smm_mem_page_count = size / PAGE_SIZE;
+
+
 		smm_dbg("[%s %d] SMM heap and mmap reserved to pfn [%#lx - %#lx)\n",
 			current->comm, current->pid, pfn,
 			pfn + size / PAGE_SIZE);
+
+		//smm_shuffle_freelist(pfn, pfn+mm->smm_mem_page_count);
 	} else {
 		mm->smm_mem_base_pfn = 0;
 		mm->smm_mem_page_count = 0;
@@ -399,4 +440,10 @@ void set_smm_page_myself(struct page *page)
 bool is_smm_page_myself(struct page *page)
 {
 	return ((void *)current->mm->smm_uid == page->smm_owner);
+}
+
+
+int is_smm_reserved(unsigned long pfn)
+{
+	return is_cma_reserved(smm_cma, pfn);
 }

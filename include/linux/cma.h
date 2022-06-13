@@ -53,5 +53,6 @@ extern int cma_for_each_area(int (*it)(struct cma *cma, void *data), void *data)
 #ifdef CONFIG_SMM
 extern unsigned long cma_reserve(struct cma *cma, size_t count, unsigned int align);
 extern bool cma_cancel(struct cma *cma, unsigned long pfn, unsigned int count);
+extern int is_cma_reserved(struct cma *cma, unsigned long pfn);
 #endif
 #endif

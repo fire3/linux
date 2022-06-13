@@ -3682,7 +3682,7 @@ static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
 			return VM_FAULT_OOM;
 		}
 
-		clear_highpage(page);
+		clear_highpage_nt(page);
 
 		inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
 		__SetPageUptodate(page);
@@ -3715,6 +3715,8 @@ static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
 		set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
 		smm_unlock();
 		clear_highpage(page);
+		pr_info_ratelimited("[%s %d] smm_do_anonymous_page alloc_contig_range:%#lx\n",
+				current->comm, current->pid, vmf->address);
 		return 0;
 	} else {
 		smm_unlock();

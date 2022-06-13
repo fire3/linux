@@ -400,6 +400,17 @@ static inline void cma_debug_show_areas(struct cma *cma) { }
 
 
 #ifdef CONFIG_SMM
+int is_cma_reserved(struct cma *cma, unsigned long pfn)
+{
+	unsigned long bitmap_no;
+	if (!cma || !cma->count || !cma->bitmap)
+		return 0;
+	if (pfn < cma->base_pfn || pfn >= (cma->base_pfn + cma->count))
+		return 0;
+	bitmap_no = (pfn - cma->base_pfn) >> (cma->order_per_bit);
+	return test_bit(bitmap_no, cma->bitmap);
+}
+
 /**
  * cma_reserve() - allocate pages from contiguous area
  * @cma:   Contiguous memory region for which the allocation is performed.

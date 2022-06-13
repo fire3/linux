@@ -963,114 +963,6 @@ buddy_merge_likely(unsigned long pfn, unsigned long buddy_pfn,
 }
 
 
-#ifdef CONFIG_SMM
-bool add_sorted(struct page *page, struct zone *zone, int migratetype,
-		int order)
-{
-	struct page *prev, *next;
-	unsigned long prev_pfn, next_pfn;
-	bool added;
-	unsigned int counter;
-
-	counter = 0;
-	added = 0;
-	prev_pfn = page_to_pfn(page) - (1 << order);
-	next_pfn = page_to_pfn(page) + (1 << order);
-
-	while (pfn_valid(prev_pfn) && pfn_valid(next_pfn)) {
-		if (page_zone(pfn_to_page(prev_pfn)) != zone ||
-		    page_zone(pfn_to_page(next_pfn)) != zone) {
-			break;
-		}
-
-		if ((prev_pfn == page_to_pfn(page)) ||
-		    (next_pfn == page_to_pfn(page))) {
-			return 0;
-		}
-
-		if (pfn_valid(prev_pfn)) {
-			prev = pfn_to_page(prev_pfn);
-			if (PageBuddy(prev) && buddy_order(prev) == order &&
-			    page_zone(prev) == zone &&
-			    get_pageblock_migratetype(prev) == migratetype) {
-				if ((void *)&page->lru == (void *)&prev->lru.next ||
-				    (void *)&page->lru == (void *)&prev->lru.prev)
-					return 1;
-
-				list_add_tail(&page->lru, &prev->lru);
-				added = 1;
-				break;
-			}
-			prev_pfn = prev_pfn - (1 << order);
-		}
-		if (pfn_valid(next_pfn)) {
-			next = pfn_to_page(next_pfn);
-			if (PageBuddy(next) && buddy_order(next) == order &&
-			    page_zone(next) == zone &&
-			    get_pageblock_migratetype(next) == migratetype) {
-				if ((void *)&page->lru == (void *)&next->lru.next ||
-				    (void *)&page->lru == (void *)&next->lru.prev)
-					return 1;
-				list_add(&page->lru, &next->lru);
-				added = 1;
-				break;
-			}
-			next_pfn = next_pfn + (1 << order);
-		}
-		counter = counter + 1;
-	}
-
-	if (added)
-		return added;
-
-	if (!pfn_valid(prev_pfn)) {
-		if ((void *)&page->lru ==
-			    (void *)&zone->free_area[order].free_list[migratetype].next ||
-		    (void *)&page->lru ==
-			    (void *)&zone->free_area[order].free_list[migratetype].prev)
-			return 1;
-		list_add_tail(&page->lru,
-			 &zone->free_area[order].free_list[migratetype]);
-		return 1;
-	}
-
-	if (page_zone(pfn_to_page(prev_pfn)) != zone) {
-		if ((void *)&page->lru ==
-			    (void *)&zone->free_area[order].free_list[migratetype].next ||
-		    (void *)&page->lru ==
-			    (void *)&zone->free_area[order].free_list[migratetype].prev)
-			return 1;
-		list_add_tail(&page->lru,
-			 &zone->free_area[order].free_list[migratetype]);
-		added = 1;
-	}
-
-	if (!pfn_valid(next_pfn)) {
-		if ((void *)&page->lru ==
-			    (void *)&zone->free_area[order].free_list[migratetype].next ||
-		    (void *)&page->lru ==
-			    (void *)&zone->free_area[order].free_list[migratetype].prev)
-			return 1;
-		list_add(&page->lru,
-			      &zone->free_area[order].free_list[migratetype]);
-		return 1;
-	}
-
-	if (page_zone(pfn_to_page(next_pfn)) != zone) {
-		if ((void *)&page->lru ==
-			    (void *)&zone->free_area[order].free_list[migratetype].next ||
-		    (void *)&page->lru ==
-			    (void *)&zone->free_area[order].free_list[migratetype].prev)
-			return 1;
-		list_add(&page->lru,
-			      &zone->free_area[order].free_list[migratetype]);
-		added = 1;
-	}
-
-	return added;
-}
-#endif
-
 /*
  * Freeing function for a buddy system allocator.
  *
@@ -2461,6 +2353,42 @@ static int fallbacks[MIGRATE_TYPES][3] = {
 static __always_inline struct page *__rmqueue_cma_fallback(struct zone *zone,
 					unsigned int order)
 {
+#ifdef CONFIG_SMM
+	unsigned int current_order;
+	struct free_area *area;
+	struct page *page, *next;
+	struct list_head *freelist;
+
+	/* Find a page of the appropriate size in the preferred list */
+	for (current_order = order; current_order < MAX_ORDER; ++current_order) {
+		int found = 0;
+		area = &(zone->free_area[current_order]);
+		freelist = &area->free_list[MIGRATE_CMA];
+		if (freelist->next == freelist)
+			continue;
+		// Fast Path
+		page = list_first_entry_or_null(freelist, struct page, lru);
+		if (!is_smm_reserved(page_to_pfn(page)))
+			goto found;
+		// Slow Path
+		page = NULL;
+		list_for_each_entry_safe(page, next, freelist, lru) {
+			if (!is_smm_reserved(page_to_pfn(page))) {
+				found = 1;
+				break;
+			}
+		}
+		if (!found)
+			continue;
+found:
+		del_page_from_free_list(page, zone, current_order);
+		expand(zone, page, order, current_order, MIGRATE_CMA);
+		set_pcppage_migratetype(page, MIGRATE_CMA);
+		return page;
+	}
+
+	return NULL;
+#endif
 	return __rmqueue_smallest(zone, order, MIGRATE_CMA);
 }
 #else
