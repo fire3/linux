@@ -3682,7 +3682,7 @@ static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
 			return VM_FAULT_OOM;
 		}
 
-		clear_highpage_nt(page);
+		clear_highpage(page);
 
 		inc_mm_counter(vma->vm_mm, MM_ANONPAGES);
 		__SetPageUptodate(page);

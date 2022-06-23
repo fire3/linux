@@ -53,6 +53,8 @@ static unsigned long smm_reserve_size __initdata;
 static bool smm_reserve_called __initdata;
 static DEFINE_MUTEX(smm_mutex);
 
+unsigned long smm_cpfile_flags __read_mostly = 0;
+
 #define smm_dbg(fmt, ...)                                                      \
 	do {                                                                   \
 		if (smm_debug)                                                 \
@@ -447,3 +449,84 @@ int is_smm_reserved(unsigned long pfn)
 {
 	return is_cma_reserved(smm_cma, pfn);
 }
+
+#ifdef CONFIG_SYSFS
+
+static ssize_t cpfile_show(struct kobject *kobj,
+			    struct kobj_attribute *attr, char *buf)
+{
+	if (test_bit(0, &smm_cpfile_flags))
+		return sprintf(buf, "[always] never\n");
+	else
+		return sprintf(buf, "always [never]\n");
+}
+
+static ssize_t cpfile_store(struct kobject *kobj,
+			     struct kobj_attribute *attr,
+			     const char *buf, size_t count)
+{
+	ssize_t ret = count;
+
+	if (sysfs_streq(buf, "always")) {
+		set_bit(0, &smm_cpfile_flags);
+	} else if (sysfs_streq(buf, "never")) {
+		clear_bit(0, &smm_cpfile_flags);
+	} else
+		ret = -EINVAL;
+
+	return ret;
+}
+static struct kobj_attribute cpfile_attr =
+	__ATTR(cpfile, 0644, cpfile_show, cpfile_store);
+
+static struct attribute *smm_attr[] = {
+	&cpfile_attr.attr,
+	NULL,
+};
+
+static const struct attribute_group smm_attr_group = {
+	.attrs = smm_attr,
+};
+
+static int __init smm_init_sysfs(struct kobject **smm_kobj)
+{
+	int err;
+
+	*smm_kobj = kobject_create_and_add("smm", mm_kobj);
+	if (unlikely(!*smm_kobj)) {
+		pr_err("failed to create smm kobject\n");
+		return -ENOMEM;
+	}
+
+	err = sysfs_create_group(*smm_kobj, &smm_attr_group);
+	if (err) {
+		pr_err("failed to register smm group\n");
+		goto delete_obj;
+	}
+
+	return 0;
+
+delete_obj:
+	kobject_put(*smm_kobj);
+	return err;
+}
+#else
+static inline int smm_init_sysfs(struct kobject **smm_kobj)
+{
+	return 0;
+}
+
+#endif /* CONFIG_SYSFS */
+
+
+static int __init smm_init(void)
+{
+	int err;
+	struct kobject *smm_kobj;
+	err = smm_init_sysfs(&smm_kobj);
+	if (err)
+		goto err_sysfs;
+err_sysfs:
+	return err;
+}
+subsys_initcall(smm_init);

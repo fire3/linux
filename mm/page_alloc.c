@@ -2387,7 +2387,8 @@ found:
 		return page;
 	}
 
-	return NULL;
+	return __rmqueue_smallest(zone, order, MIGRATE_CMA);
+	//return NULL;
 #endif
 	return __rmqueue_smallest(zone, order, MIGRATE_CMA);
 }
@@ -9031,6 +9032,9 @@ void smm_do_read_fault(struct vm_fault *vmf)
 	struct zone *zone;
 	struct vm_area_struct *vma = vmf->vma;
 	unsigned long address = vmf->address;
+
+	if (!test_bit(0, &smm_cpfile_flags))
+		return;
 
 	if (!vmf->vma->vm_mm->smm_activate)
 		return;

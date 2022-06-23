@@ -29,5 +29,7 @@ extern void smm_do_read_fault(struct vm_fault *vmf);
 extern struct page *smm_alloc_zeroed_user_highpage_movable(struct vm_fault *vmf);
 extern struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, struct vm_fault *vmf);
 extern int is_smm_reserved(unsigned long pfn);
+
+extern unsigned long smm_cpfile_flags __read_mostly;
 #endif /* __KERNEL__ */
 #endif /* _LINUX_SMM_H */
