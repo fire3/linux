@@ -846,6 +846,10 @@ void choose_random_location(unsigned long input,
 		mem_limit = KERNEL_IMAGE_SIZE;
 	else
 		mem_limit = MAXMEM;
+#ifdef CONFIG_SMM
+	if (!IS_ENABLED(CONFIG_X86_32))
+		mem_limit = 4UL<<30;
+#endif
 
 	/* Record the various known unsafe memory ranges. */
 	mem_avoid_init(input, input_size, *output);
