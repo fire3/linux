@@ -8945,8 +8945,6 @@ bool take_page_off_buddy(struct page *page)
 #ifdef CONFIG_SMM
 extern void smm_lock(void);
 extern void smm_unlock(void);
-extern void set_smm_page_myself(struct page *page);
-extern bool is_smm_page_myself(struct page *page);
 
 /*
  * Break down a higher-order page in sub-pages, and keep our target out of
@@ -9023,7 +9021,6 @@ bool take_smm_page_off_buddy(struct page *page, int target_order, gfp_t gfp)
 
 void smm_do_read_fault(struct vm_fault *vmf)
 {
-	unsigned long flags;
 	unsigned int alloc_flags;
 	unsigned long pfn;
 
@@ -9059,10 +9056,6 @@ void smm_do_read_fault(struct vm_fault *vmf)
 	ret = take_smm_page_off_buddy(page, 0, GFP_HIGHUSER_MOVABLE);
 
 	if (ret) {
-		spin_lock_irqsave(&zone->lock, flags);
-		set_smm_page_myself(page);
-		spin_unlock_irqrestore(&zone->lock, flags);
-
 		copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
 
 		unlock_page(vmf->page);
@@ -9071,22 +9064,12 @@ void smm_do_read_fault(struct vm_fault *vmf)
 		vmf->page = page;
 
 	} else {
-
-		if (is_smm_page_myself(page)) {
-			unlock_page(vmf->page);
-			put_page(vmf->page);
-			lock_page(page);
-			vmf->page = page;
-			get_page(page);
-			return;
-		}
 		smm_lock();
 		ret = alloc_contig_range(pfn, pfn+1, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
 		smm_unlock();
 		if (ret == 0) {
 
 			copy_user_highpage(page, vmf->page, vmf->address, vmf->vma);
-			set_smm_page_myself(page);
 			unlock_page(vmf->page);
 			put_page(vmf->page);
 			vmf->page = page;
@@ -9125,7 +9108,6 @@ struct page *smm_alloc_page_vma_highuser_movable(struct vm_area_struct *vma, str
 
 	if (ret) {
 		spin_lock_irqsave(&zone->lock, flags);
-		set_smm_page_myself(page);
 		spin_unlock_irqrestore(&zone->lock, flags);
 	} else {
 

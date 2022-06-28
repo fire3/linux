@@ -3715,8 +3715,10 @@ static vm_fault_t smm_do_anonymous_page(struct vm_fault *vmf)
 		set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
 		smm_unlock();
 		clear_highpage(page);
-		pr_info_ratelimited("[%s %d] smm_do_anonymous_page alloc_contig_range:%#lx\n",
-				current->comm, current->pid, vmf->address);
+		vma->vm_mm->smm_migrate_page_count++;
+
+		//pr_info_ratelimited("[%s %d] smm_do_anonymous_page alloc_contig_range:%#lx\n",
+		//		current->comm, current->pid, vmf->address);
 		return 0;
 	} else {
 		smm_unlock();

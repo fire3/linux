@@ -770,13 +770,69 @@ vm_fault_t smm_do_huge_pmd_anonymous_page(struct vm_fault *vmf)
 		count_vm_event(THP_FAULT_ALLOC);
 		count_memcg_event_mm(vma->vm_mm, THP_FAULT_ALLOC);
 
+
+		clear_huge_page(page, vmf->address, HPAGE_PMD_NR);
+		return ret;
+	}
+
+	spin_unlock(vmf->ptl);
+	smm_lock();
+	if (unlikely(!pmd_none(*vmf->pmd)) && pmd_pfn(*vmf->pmd) == pfn) {
+		smm_unlock();
+		return 0;
+	}
+
+	ret = alloc_contig_range(pfn, pfn+HPAGE_PMD_NR, MIGRATE_CMA, GFP_HIGHUSER_MOVABLE);
+
+	if (ret == 0) {
+		prep_compound_page(page, HPAGE_PMD_ORDER);
+		prep_transhuge_page(page);
+
+		__SetPageUptodate(page);
+
+		VM_BUG_ON_PAGE(!PageCompound(page), page);
+
+		if (mem_cgroup_charge(page, vma->vm_mm, gfp)) {
+			spin_unlock(vmf->ptl);
+			put_page(page);
+			count_vm_event(THP_FAULT_FALLBACK);
+			count_vm_event(THP_FAULT_FALLBACK_CHARGE);
+			return VM_FAULT_FALLBACK;
+		}
+
+		cgroup_throttle_swaprate(page, gfp);
+
+		ret = check_stable_address_space(vma->vm_mm);
+		if (ret) {
+			spin_unlock(vmf->ptl);
+			put_page(page);
+			return ret;
+		}
+
+		entry = mk_huge_pmd(page, vma->vm_page_prot);
+		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
+		page_add_new_anon_rmap(page, vma, haddr, true);
+		lru_cache_add_inactive_or_unevictable(page, vma);
+
+		vmf->ptl = pmd_lock(vma->vm_mm, vmf->pmd);
+		pgtable_trans_huge_deposit(vma->vm_mm, vmf->pmd, pgtable);
+		set_pmd_at(vma->vm_mm, haddr, vmf->pmd, entry);
+		spin_unlock(vmf->ptl);
+		add_mm_counter(vma->vm_mm, MM_ANONPAGES, HPAGE_PMD_NR);
+		mm_inc_nr_ptes(vma->vm_mm);
+
+		smm_unlock();
+		count_vm_event(THP_FAULT_ALLOC);
+		count_memcg_event_mm(vma->vm_mm, THP_FAULT_ALLOC);
+
+		vma->vm_mm->smm_migrate_page_count += HPAGE_PMD_NR;
+
 		clear_huge_page(page, vmf->address, HPAGE_PMD_NR);
 		return ret;
 	} else {
+		smm_unlock();
 		return do_huge_pmd_anonymous_page(vmf);
 	}
-
-	return ret;
 }
 
 #endif

@@ -441,7 +441,7 @@ struct mm_struct {
                 unsigned long smm_code_page_count;   /* CMA reserved code size */
                 unsigned long smm_mem_page_count;    /* CMA reserved mmap/heap size */
 
-		unsigned long smm_uid;
+		unsigned long smm_migrate_page_count;
 #endif
 		unsigned long mmap_base;	/* base of mmap area */
 		unsigned long mmap_legacy_base;	/* base of mmap area in bottom-up allocations */

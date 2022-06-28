@@ -118,6 +118,7 @@ bool smm_cma_cancel(unsigned long pfn, unsigned int count)
 	return cma_cancel(smm_cma, pfn, count);
 }
 
+/*
 void smm_shuffle_freelist(unsigned long pfn_start, unsigned long pfn_end)
 {
 	struct zone *zone;
@@ -152,6 +153,7 @@ void smm_shuffle_freelist(unsigned long pfn_start, unsigned long pfn_end)
 
 	spin_unlock_irqrestore(&zone->lock, flags);
 }
+*/
 
 void smm_cma_reserve_code(unsigned long size, struct mm_struct *mm)
 {
@@ -215,12 +217,9 @@ void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
 		mm->smm_mem_base_pfn = pfn;
 		mm->smm_mem_page_count = size / PAGE_SIZE;
 
-
 		smm_dbg("[%s %d] SMM heap and mmap reserved to pfn [%#lx - %#lx)\n",
 			current->comm, current->pid, pfn,
 			pfn + size / PAGE_SIZE);
-
-		//smm_shuffle_freelist(pfn, pfn+mm->smm_mem_page_count);
 	} else {
 		mm->smm_mem_base_pfn = 0;
 		mm->smm_mem_page_count = 0;
@@ -228,22 +227,6 @@ void smm_cma_reserve_mem(unsigned long size, struct mm_struct *mm)
 			current->comm, current->pid, size);
 	}
 }
-
-void smm_check_unfree_pages(void)
-{
-	unsigned long i;
-	unsigned long pfn = smm_cma->base_pfn;
-	struct page *page;
-
-	for (i = 0; i < smm_cma->count; i++) {
-		page = pfn_to_page(pfn);
-		if (page_ref_count(page) != 0) {
-			dump_page(page, "Unfree CMA page");
-		}
-		pfn++;
-	}
-}
-
 
 void exit_smm(struct mm_struct *mm)
 {
@@ -260,6 +243,8 @@ void exit_smm(struct mm_struct *mm)
 		smm_dbg("[%s %d] SMM cancel heap and mmap cma pfn [%#lx - %#lx).\n",
 			current->comm, current->pid, mm->smm_mem_base_pfn,
 			mm->smm_mem_base_pfn + mm->smm_mem_page_count);
+
+		smm_dbg("[%s %d] SMM migrate page count: %ld\n",current->comm, current->pid, mm->smm_migrate_page_count);
 	}
 
 	if (mm->smm_code_base_pfn && mm->smm_code_page_count) {
@@ -267,9 +252,8 @@ void exit_smm(struct mm_struct *mm)
 		smm_dbg("[%s %d] SMM cancel code cma pfn [%#lx - %#lx).\n",
 			current->comm, current->pid, mm->smm_code_base_pfn,
 			mm->smm_code_base_pfn + mm->smm_code_page_count);
-
-		//smm_check_unfree_pages();
 	}
+
 }
 
 void mm_init_smm(struct mm_struct *mm)
@@ -296,8 +280,7 @@ void mm_init_smm(struct mm_struct *mm)
 	mm->smm_code_size = 0;
 	mm->smm_stack_size = 0;
 	mm->smm_mem_size = 0;
-
-	mm->smm_uid = get_cycles();
+	mm->smm_migrate_page_count = 0;
 }
 
 unsigned long smm_code_va_to_pa(struct mm_struct *mm, unsigned long va)
@@ -433,17 +416,6 @@ void smm_unlock(void)
 {
 	mutex_unlock(&smm_mutex);
 }
-
-void set_smm_page_myself(struct page *page)
-{
-	page->smm_owner = (void *)current->mm->smm_uid;
-}
-
-bool is_smm_page_myself(struct page *page)
-{
-	return ((void *)current->mm->smm_uid == page->smm_owner);
-}
-
 
 int is_smm_reserved(unsigned long pfn)
 {
